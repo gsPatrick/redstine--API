@@ -1,0 +1,17 @@
+# Dependências
+node_modules/
+
+# Segredos — o .env nunca entra no repositório.
+# O .env.example documenta as variáveis sem expor valores.
+.env
+.env.*
+!.env.example
+
+# Uploads são dados, não código: vivem num volume no servidor.
+uploads/
+
+# Logs e temporários
+*.log
+npm-debug.log*
+.DS_Store
+coverage/

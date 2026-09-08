@@ -1,0 +1,40 @@
+{
+  "name": "red-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "API da RED — plataforma de circulação de ativos",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "node --watch app.js",
+    "migrate": "sequelize-cli db:migrate",
+    "migrate:undo": "sequelize-cli db:migrate:undo",
+    "seed": "node scripts/seed.js",
+    "smoke:test": "node scripts/smoke.js",
+    "test": "node --test tests/*.test.js",
+    "seed:demo": "node scripts/seed-demo.js",
+    "check:contrato": "node scripts/contrato.mjs",
+    "check:acoes": "node scripts/acoes.mjs",
+    "check:paineis": "npm run seed:demo && npm run check:contrato && npm run seed:demo && npm run check:acoes",
+    "catalog:import": "node scripts/importar-catalogo.js",
+    "clean:tests": "node scripts/limpar-testes.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^7.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "pg": "^8.12.0",
+    "pg-hstore": "^2.3.4",
+    "sequelize": "^6.37.3",
+    "zod": "^3.23.8",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "sequelize-cli": "^6.6.2"
+  }
+}
