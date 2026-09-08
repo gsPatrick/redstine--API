@@ -17,7 +17,8 @@
     "check:acoes": "node scripts/acoes.mjs",
     "check:paineis": "npm run seed:demo && npm run check:contrato && npm run seed:demo && npm run check:acoes",
     "catalog:import": "node scripts/importar-catalogo.js",
-    "clean:tests": "node scripts/limpar-testes.js"
+    "clean:tests": "node scripts/limpar-testes.js",
+    "senha:redefinir": "node scripts/redefinir-senha.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
