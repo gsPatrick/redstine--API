@@ -73,7 +73,19 @@ const env = {
   },
 
   cors: {
-    origins: list(process.env.CORS_ORIGINS, ["http://localhost:3000"]),
+    /**
+     * Origens permitidas.
+     *
+     * `APP_SITE_URL` entra automaticamente: se a API sabe onde o site está —
+     * usa esse endereço para montar os links dos e-mails —, recusar chamadas
+     * vindas de lá seria contraditório. Isso evita o erro mais comum do
+     * deploy: subir tudo e o painel falhar por CORS porque faltou repetir o
+     * mesmo domínio numa segunda variável.
+     */
+    origins: [
+      ...list(process.env.CORS_ORIGINS, ["http://localhost:3000"]),
+      (process.env.APP_SITE_URL || "").replace(/\/$/, ""),
+    ].filter(Boolean),
   },
 
   rateLimit: {

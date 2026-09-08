@@ -36,6 +36,8 @@ JWT_SECRET=<64 caracteres aleatórios — gere um novo, não reaproveite>
 JWT_EXPIRES_IN=7d
 
 CORS_ORIGINS=https://redestine.com.br,https://www.redestine.com.br
+# O valor de APP_SITE_URL entra automaticamente nas origens permitidas —
+# definir os dois com o mesmo domínio é redundante, mas não faz mal.
 
 MAIL_HOST=<smtp>
 MAIL_PORT=587
