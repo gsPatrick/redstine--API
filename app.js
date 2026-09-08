@@ -7,6 +7,7 @@ const morgan = require("morgan");
 
 const { env, assertEnv } = require("./src/config/env");
 const { sequelize } = require("./src/config/database");
+const { prepararBanco } = require("./src/config/bootstrap");
 const { corsMiddleware } = require("./src/middlewares/cors");
 const { apiLimiter } = require("./src/middlewares/rate-limit");
 const { notFoundHandler, errorHandler } = require("./src/middlewares/error-handler");
@@ -40,19 +41,67 @@ app.use(env.app.apiPrefix, apiLimiter, routes);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
+/**
+ * Espera o banco aceitar conexão.
+ *
+ * Num deploy, a API e o Postgres sobem juntos e a API costuma ficar pronta
+ * primeiro. Sem esta espera o contêiner morre no primeiro segundo, o
+ * orquestrador reinicia, e o ciclo se repete até dar sorte — com falhas no log
+ * que parecem erro de configuração e não são.
+ */
+async function esperarBanco(tentativas = 12, intervaloMs = 3000) {
+  for (let i = 1; i <= tentativas; i += 1) {
+    try {
+      await sequelize.authenticate();
+      console.log("[db] conexao estabelecida");
+      return;
+    } catch (err) {
+      if (i === tentativas) {
+        console.error(`[db] falha ao conectar apos ${tentativas} tentativas:`, err.message);
+        process.exit(1);
+      }
+      console.log(`[db] indisponivel (${i}/${tentativas}), nova tentativa em ${intervaloMs / 1000}s…`);
+      await new Promise((r) => setTimeout(r, intervaloMs));
+    }
+  }
+}
+
 async function start() {
+  await esperarBanco();
+
+  // Migrações, seed e catálogo inicial. O passo do catálogo só roda quando o
+  // banco não tem ativo nenhum — ver src/config/bootstrap.js.
   try {
-    await sequelize.authenticate();
-    console.log("[db] conexao estabelecida");
+    const db = require("./src/models");
+    await prepararBanco(db);
   } catch (err) {
-    console.error("[db] falha ao conectar:", err.message);
+    console.error("[bootstrap]", err.message);
     process.exit(1);
   }
 
-  app.listen(env.app.port, () => {
+  const servidor = app.listen(env.app.port, () => {
     console.log(`[api] a ouvir em http://localhost:${env.app.port}${env.app.apiPrefix}`);
     console.log(`[api] ambiente: ${env.nodeEnv}`);
   });
+
+  /**
+   * Encerramento limpo.
+   *
+   * O orquestrador manda SIGTERM e espera. Sem tratar, o processo morre no
+   * meio das requisições em curso — um comprador podia perder o pedido que
+   * acabou de enviar durante um deploy.
+   */
+  for (const sinal of ["SIGTERM", "SIGINT"]) {
+    process.on(sinal, () => {
+      console.log(`[api] ${sinal} recebido, encerrando…`);
+      servidor.close(async () => {
+        await sequelize.close().catch(() => {});
+        process.exit(0);
+      });
+      // Rede de segurança: se alguma conexão travar, não fica preso para sempre.
+      setTimeout(() => process.exit(0), 10000).unref();
+    });
+  }
 }
 
 if (require.main === module) start();

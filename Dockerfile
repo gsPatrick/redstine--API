@@ -13,6 +13,10 @@ WORKDIR /app
 # Só os manifestos primeiro: esta camada só é refeita quando uma dependência
 # muda, não a cada alteração de código.
 COPY package.json package-lock.json* ./
+
+# `--omit=dev` deixa de fora as ferramentas de teste. O `sequelize-cli` NÃO
+# está entre elas: as migrações rodam no arranque (src/config/bootstrap.js),
+# então ele é dependência de produção de verdade.
 RUN npm ci --omit=dev
 
 

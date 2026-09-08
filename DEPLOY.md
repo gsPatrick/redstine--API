@@ -63,19 +63,44 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 Monte um volume em **`/app/uploads`**. Sem ele, as imagens enviadas somem a
 cada deploy.
 
-### Primeiro deploy
+### Primeiro deploy — não precisa fazer nada
 
-Depois do primeiro build, no terminal do serviço:
+A API prepara o banco sozinha no arranque:
 
-```bash
-npm run migrate        # cria o esquema
-npm run seed           # categorias, subcategorias e o primeiro admin
-npm run catalog:import # opcional: traz o catálogo do site anterior
+| Passo | Quando roda | Se falhar |
+|---|---|---|
+| Migrações | sempre | a API **não sobe** — esquema incompleto produz erro em toda rota |
+| Seed | sempre (idempotente) | a API sobe; o log diz o que houve |
+| Catálogo inicial | **só quando não há nenhum ativo** | a API sobe sem catálogo |
+
+O catálogo roda uma vez só de propósito. A importação atualiza pelo slug, então
+rodá-la a cada arranque desfaria qualquer preço ou descrição que a curadoria
+tivesse ajustado no painel — um reinício não pode reverter trabalho.
+
+Antes de tudo isso a API espera o banco aceitar conexão, até 12 tentativas a
+cada 3 segundos. Num deploy, a API costuma ficar pronta antes do Postgres, e
+sem essa espera o contêiner morreria em ciclo.
+
+Acompanhe pelo log do contêiner:
+
+```
+[db] conexao estabelecida
+[bootstrap] migrações: ...
+[bootstrap] seed: ...
+[bootstrap] catálogo inicial: ...
+[api] a ouvir em ...
 ```
 
 O admin nasce como `admin@redestine.com.br`. **Troque a senha no primeiro
-acesso** — ou defina `SEED_ADMIN_EMAIL` e `SEED_ADMIN_PASSWORD` antes de rodar
-o seed.
+acesso** — ou defina `SEED_ADMIN_EMAIL` e `SEED_ADMIN_PASSWORD` antes do
+primeiro arranque.
+
+### Desligar o preparo automático
+
+```
+BOOTSTRAP_DB=false        # não roda nada — para conduzir uma migração à mão
+BOOTSTRAP_CATALOG=false   # roda migrações e seed, sem o catálogo inicial
+```
 
 ## 3. Front
 

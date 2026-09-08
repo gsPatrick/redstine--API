@@ -24,7 +24,14 @@ const {
   DISPONIBILIDADE,
 } = require("../src/config/constants");
 
-const ORIGEM = path.resolve(__dirname, "../../redestine/lib/products.json");
+/**
+ * O catálogo vive DENTRO do repositório.
+ *
+ * Antes apontava para o JSON no projeto do front, um caminho fora daqui — no
+ * contêiner esse arquivo não existe e a importação falharia. Uma cópia própria
+ * torna a API autossuficiente, que é o que um deploy precisa.
+ */
+const ORIGEM = path.resolve(__dirname, "dados/catalogo-inicial.json");
 
 /** O JSON traz a condição por extenso; o banco guarda a chave. */
 const CONDICAO = {
