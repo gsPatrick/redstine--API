@@ -81,6 +81,9 @@ const env = {
      * vindas de lá seria contraditório. Isso evita o erro mais comum do
      * deploy: subir tudo e o painel falhar por CORS porque faltou repetir o
      * mesmo domínio numa segunda variável.
+     *
+     * `CORS_ORIGINS=*` libera qualquer origem. Ver src/middlewares/cors.js
+     * para o que isso significa e quando deixa de ser aceitável.
      */
     origins: [
       ...list(process.env.CORS_ORIGINS, ["http://localhost:3000"]),

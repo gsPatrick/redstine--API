@@ -35,9 +35,9 @@ DB_SSL=false
 JWT_SECRET=<64 caracteres aleatórios — gere um novo, não reaproveite>
 JWT_EXPIRES_IN=7d
 
-CORS_ORIGINS=https://redestine.com.br,https://www.redestine.com.br
-# O valor de APP_SITE_URL entra automaticamente nas origens permitidas —
-# definir os dois com o mesmo domínio é redundante, mas não faz mal.
+# `*` libera qualquer origem; uma lista separada por vírgula restringe.
+# O valor de APP_SITE_URL entra automaticamente nas origens permitidas.
+CORS_ORIGINS=*
 
 MAIL_HOST=<smtp>
 MAIL_PORT=587
@@ -150,7 +150,23 @@ Depois, no navegador: abra `redestine.com.br`, entre em `/entrar` e confirme
 que o painel carrega os dados. Se o catálogo aparece mas o painel fica em
 "Carregando…", o `NEXT_PUBLIC_API_URL` não entrou no build.
 
-## 6. Antes de abrir ao público
+## 6. Sobre o CORS aberto
+
+`CORS_ORIGINS=*` permite que qualquer site chame esta API a partir do
+navegador. Aqui o risco é menor do que o habitual: a sessão é um **Bearer
+token no localStorage**, que é isolado por origem — um site de terceiros não
+consegue lê-lo nem viajar de carona na sessão de quem está autenticado. O que
+a abertura permite é qualquer front consumir a API diretamente.
+
+Quando restringir vale a pena:
+
+- Se a autenticação passar a usar **cookie**, a abertura vira um buraco de
+  CSRF e a allowlist deixa de ser opcional.
+- Depois que o domínio definitivo estiver de pé, trocar para
+  `CORS_ORIGINS=https://redestine.com.br` custa uma variável e reduz a
+  superfície sem nenhum efeito colateral.
+
+## 7. Antes de abrir ao público
 
 - [ ] Senha do Postgres trocada e porta externa fechada
 - [ ] `JWT_SECRET` novo, com 64 caracteres
