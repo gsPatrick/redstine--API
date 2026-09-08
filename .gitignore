@@ -8,7 +8,12 @@ node_modules/
 !.env.example
 
 # Uploads são dados, não código: vivem num volume no servidor.
-uploads/
+#
+# A barra inicial ancora o padrão na RAIZ. Sem ela, `uploads/` casa com
+# QUALQUER diretório de mesmo nome em qualquer nível — e engolia
+# `src/features/uploads/`, o que fazia a API subir e morrer no primeiro
+# require por módulo inexistente.
+/uploads/
 
 # Logs e temporários
 *.log
