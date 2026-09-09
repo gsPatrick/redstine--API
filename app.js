@@ -28,8 +28,19 @@ app.use(morgan(env.isProduction ? "combined" : "dev"));
 
 // Ficheiros enviados. Em producao com varias instancias isto sai para um
 // bucket — ver src/providers/storage.
+//
+// O helmet marca tudo como Cross-Origin-Resource-Policy: same-origin, o que e
+// o default certo para respostas da API mas errado para estas: sao imagens
+// feitas para serem exibidas pelo site, que vive noutro dominio. Com
+// same-origin o browser BAIXA a imagem e recusa-se a desenha-la
+// (ERR_BLOCKED_BY_RESPONSE.NotSameOrigin) — nao ha erro no servidor, nada
+// aparece no log, e a foto simplesmente nao aparece na tela.
 app.use(
   `/${env.upload.dir}`,
+  (req, res, next) => {
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    next();
+  },
   express.static(path.resolve(process.cwd(), env.upload.dir), {
     maxAge: "7d",
     fallthrough: true,

@@ -80,6 +80,35 @@ const b = (await chamar("GET","/management/overview?periodo=12m",admin)).json.da
 ok("Estado ignora o filtro de período", a.estado.ativosPublicados === b.estado.ativosPublicados);
 ok("Fluxo responde ao filtro de período", JSON.stringify(a.fluxo) !== JSON.stringify(b.fluxo) || a.fluxo.vendasRealizadas === b.fluxo.vendasRealizadas);
 
+// Curadoria de envios
+console.log("\n== CURADORIA DE ENVIOS ==");
+const envio = (await chamar("GET","/submissions?status=recebida",admin)).json.data[0];
+if (envio) {
+  const inicio = await chamar("POST",`/submissions/${envio.id}/start-review`,admin);
+  ok("Iniciar avaliação move para em_avaliacao", inicio.json?.data?.status === "em_avaliacao", `(${inicio.status})`);
+
+  // Recusar sem motivo tem de falhar: o motivo e o que o fornecedor recebe
+  // como resposta, e recusar em silencio nao e uma decisao comunicavel.
+  const semMotivo = await chamar("POST",`/submissions/${envio.id}/evaluations`,admin,{ approved:false });
+  ok("Recusar exige motivo", semMotivo.status === 422 || semMotivo.status === 400, `(${semMotivo.status})`);
+
+  // Aprovar sem categoria tambem: sem ela o ativo nao tem lugar no catalogo.
+  const semCategoria = await chamar("POST",`/submissions/${envio.id}/evaluations`,admin,{ approved:true });
+  ok("Aprovar exige categoria", semCategoria.status === 422 || semCategoria.status === 400, `(${semCategoria.status})`);
+
+  const cat = (await chamar("GET","/catalog/categories")).json.data[0];
+  const aprov = await chamar("POST",`/submissions/${envio.id}/evaluations`,admin,{
+    approved:true, categoryId:cat.id, name:"[smoke] aprovado pela curadoria",
+    recommendedPrice:990, recommendedModel:"estoque",
+  });
+  ok("Aprovar cria o ativo", Boolean(aprov.json?.data?.evaluation?.assetId), `(${aprov.status})`);
+
+  const depois = (await chamar("GET",`/submissions/${envio.id}`,admin)).json.data;
+  ok("Envio fica aprovado e com histórico", depois.status==="aprovada" && depois.avaliacoes.length>0);
+} else {
+  console.log("  (sem envio recebido para avaliar)");
+}
+
 // Separação de acesso
 console.log("\n== SEPARAÇÃO DE ACESSO ==");
 const semToken = await chamar("GET","/management/financial/movements");
@@ -92,6 +121,10 @@ const fornVeOutro = await chamar("GET","/me/purchases",forn);
 ok("Fornecedor só vê os próprios dados", fornVeOutro.status===200 && fornVeOutro.json.data.length===0);
 const compVeVendas = (await chamar("GET","/me/sales",comp)).json.data;
 ok("Comprador sem ativos não vê venda nenhuma", compVeVendas.length===0);
+const fornNosEnvios = await chamar("GET","/submissions",forn);
+ok("Fornecedor não vê a fila de envios de todos", fornNosEnvios.status===403, `(veio ${fornNosEnvios.status})`);
+const fornAvalia = await chamar("POST","/submissions/00000000-0000-4000-8000-000000000000/evaluations",forn,{approved:true});
+ok("Fornecedor não avalia envio", fornAvalia.status===403, `(veio ${fornAvalia.status})`);
 
 console.log(mau ? `\n${mau} ação com problema` : "\ntodas as ações da tela funcionam");
 process.exit(mau?1:0);

@@ -63,6 +63,8 @@ const CONTRATO_GESTAO = [
   ["Gestão Visão Geral / variações", "/management/overview", (d) => d.variacoes, ["vendasRealizadas","valorVendido","consultasRecebidas"]],
   ["Gestão Visão Geral / pendências", "/management/overview", (d) => d.alertas, ["consultasEmAberto","ativosAguardandoAprovacao","enviosSemAvaliacao","repassesForaDoPrazo","prazoRepasseHoras"]],
   ["Gestão Visão Geral / gráfico vendas", "/management/overview", (d) => d.graficos?.evolucaoVendas?.[0], ["rotulo","valor"]],
+  ["Gestão Envios / linha", "/submissions", (d) => primeira(d), ["id","reference","assetType","approximateQuantity","company","name","email","city","photos","status","createdAt"]],
+  ["Gestão Envio / detalhe", "__envio__", (d) => d, ["id","reference","assetType","description","approximateQuantity","notes","photos","attributes","city","name","company","email","phone","supplierId","status","createdAt","avaliacoes"]],
   ["Gestão Visão Geral / gráfico categoria", "/management/overview", (d) => d.graficos?.vendasPorCategoria?.[0], ["rotulo","valor","cor","percentual"]],
   ["Comercial Consultas / cartões", "/management/consultations/summary", (d) => d, ["total","novas","emAtendimento","respondidas","encerradas"]],
   ["Comercial Consultas / linha", "/management/consultations", (d) => primeira(d), ["id","data","cliente","ativo","quantidade","status","responsavel","atualizacao"]],
@@ -92,11 +94,13 @@ const tkAdmin = await token("admin@redestine.com.br", "RedAdmin2026!");
 const compraId = (await get("/me/purchases", tkComp)).json.data[0]?.id;
 const consultaId = (await get("/me/consultations", tkComp)).json.data[0]?.id;
 const movId = (await get("/management/financial/movements", tkAdmin)).json.data[0]?.id;
+const envioId = (await get("/submissions", tkAdmin)).json.data[0]?.id;
 
 const resolver = (rota) =>
   rota === "__compra__" ? `/me/purchases/${compraId}`
   : rota === "__consulta__" ? `/me/consultations/${consultaId}`
   : rota === "__mov__" ? `/management/financial/movements/${movId}`
+  : rota === "__envio__" ? `/submissions/${envioId}`
   : rota;
 
 let faltas = 0, vazios = 0, okc = 0;

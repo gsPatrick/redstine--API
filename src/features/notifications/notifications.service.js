@@ -73,7 +73,7 @@ const MODELOS = {
   [NOTIFICACOES.NOVO_ENVIO]: (d) => ({
     title: "Novo ativo enviado para avaliacao",
     body: `Envio ${d.reference} aguardando curadoria.`,
-    link: `/gestao/comercial/ativos`,
+    link: `/gestao/comercial/envios/${d.entityId}`,
   }),
   [NOTIFICACOES.VENDA_REALIZADA]: (d) => ({
     title: "Venda realizada",
