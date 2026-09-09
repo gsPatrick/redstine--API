@@ -20,16 +20,43 @@ const int = (value, fallback) => {
 const list = (value, fallback = []) =>
   value ? String(value).split(",").map((s) => s.trim()).filter(Boolean) : fallback;
 
+/**
+ * Enderecos publicos, com o de producao embutido.
+ *
+ * `publicUrl` entra no endereco de cada ficheiro enviado, e esse endereco fica
+ * GRAVADO no banco: cair no default de localhost em producao nao da erro
+ * nenhum na hora — as fotos sobem, o envio e criado — e so muito depois
+ * alguem repara que nenhuma imagem abre, com o valor errado ja persistido em
+ * varios registos. `siteUrl` tem o mesmo risco nos links dos e-mails.
+ *
+ * Por isso o valor de producao esta aqui e nao so no .env: a variavel continua
+ * a mandar quando definida, e quem esquece de a definir cai no endereco certo
+ * em vez de no localhost. Mesmo criterio do front em lib/config.js.
+ */
+const PRODUCAO = {
+  api: "https://redstine-redstine--api.9jczjy.easypanel.host",
+  site: "https://redstine-redstine--front.9jczjy.easypanel.host",
+};
+
+const ehProducao = (process.env.NODE_ENV || "development") === "production";
+
+const semBarra = (valor) => String(valor).replace(/\/$/, "");
+
 const env = {
   nodeEnv: process.env.NODE_ENV || "development",
-  isProduction: (process.env.NODE_ENV || "development") === "production",
+  isProduction: ehProducao,
 
   app: {
     port: int(process.env.APP_PORT, 4000),
     apiPrefix: process.env.APP_API_PREFIX || "/api",
     // Usado para montar links nos e-mails.
-    siteUrl: (process.env.APP_SITE_URL || "http://localhost:3000").replace(/\/$/, ""),
-    publicUrl: (process.env.APP_PUBLIC_URL || "http://localhost:4000").replace(/\/$/, ""),
+    siteUrl: semBarra(
+      process.env.APP_SITE_URL || (ehProducao ? PRODUCAO.site : "http://localhost:3000")
+    ),
+    // Prefixo dos URLs dos ficheiros enviados. Ver a nota acima.
+    publicUrl: semBarra(
+      process.env.APP_PUBLIC_URL || (ehProducao ? PRODUCAO.api : "http://localhost:4000")
+    ),
   },
 
   db: {
@@ -87,7 +114,11 @@ const env = {
      */
     origins: [
       ...list(process.env.CORS_ORIGINS, ["http://localhost:3000"]),
-      (process.env.APP_SITE_URL || "").replace(/\/$/, ""),
+      // Lê o endereço já resolvido, não a variável crua: em produção o site
+      // tem endereço conhecido mesmo sem APP_SITE_URL definida, e usar a
+      // variável aqui deixaria justamente esse caso de fora.
+      ehProducao ? PRODUCAO.site : "",
+      semBarra(process.env.APP_SITE_URL || ""),
     ].filter(Boolean),
   },
 
@@ -131,16 +162,8 @@ function assertEnv() {
   if (env.isProduction && env.jwt.secret.length < 32) {
     faltando.push("JWT_SECRET (minimo 32 caracteres em producao)");
   }
-  // O URL publico entra no endereco de cada ficheiro enviado, e esse endereco
-  // fica GRAVADO no banco. Ficar no default de localhost em producao nao da
-  // erro nenhum no upload: as fotos sobem, o envio e criado, e so muito depois
-  // alguem repara que nenhuma imagem abre — e ai o valor errado ja esta
-  // persistido em varios registos. Melhor nao subir.
-  if (env.isProduction && env.app.publicUrl.includes("localhost")) {
-    faltando.push(
-      "APP_PUBLIC_URL (o endereco publico da API; sem ele as fotos enviadas ficam gravadas apontando para localhost)"
-    );
-  }
+  // Nao ha checagem de APP_PUBLIC_URL: em producao o default ja e o endereco
+  // real da API, entao esquecer a variavel nao quebra as fotos.
 
   // Gateway real sem credencial falha no primeiro checkout, nao no boot —
   // por isso a checagem sobe para aqui.
