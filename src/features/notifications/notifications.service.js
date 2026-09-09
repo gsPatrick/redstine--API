@@ -15,61 +15,70 @@ const { env } = require("../../config/env");
  * agora. Como eventos e auditoria, nunca derruba a operacao que a gerou.
  */
 
+/**
+ * Cada notificacao aponta para uma rota que EXISTE no front.
+ *
+ * Os links antigos vinham de `/my-account/...`, area que foi substituida pelo
+ * painel e nao existe mais, e de rotas de detalhe (`/envios/:id`,
+ * `/vendas/:id`) que nunca chegaram a existir — clicar no sino dava 404.
+ * Onde ha pagina de detalhe, o link leva ao objeto; onde nao ha, leva a
+ * listagem correspondente, que e o mais perto do objeto que o front oferece.
+ */
 const MODELOS = {
   [NOTIFICACOES.CONSULTA_RESPONDIDA]: (d) => ({
     title: "Sua consulta foi respondida",
     body: `Respondemos a consulta ${d.reference} sobre ${d.assetName}.`,
-    link: `/my-account/consultas/${d.entityId}`,
+    link: `/painel/consultas/${d.entityId}`,
   }),
   [NOTIFICACOES.COMPRA_CONFIRMADA]: (d) => ({
     title: `Compra ${d.reference} confirmada`,
     body: "Sua compra foi confirmada pela RED.",
-    link: `/my-account/compras/${d.entityId}`,
+    link: `/painel/compras/${d.entityId}`,
   }),
   [NOTIFICACOES.COMPRA_PRONTA_RETIRADA]: (d) => ({
     title: `Compra ${d.reference} disponivel para retirada`,
     body: "Combine a retirada com a equipe da RED.",
-    link: `/my-account/compras/${d.entityId}`,
+    link: `/painel/compras/${d.entityId}`,
   }),
   [NOTIFICACOES.ATIVO_AGUARDANDO_APROVACAO]: (d) => ({
     title: "Seu ativo aguarda sua aprovacao",
     body: `"${d.assetName}" passou pela curadoria. Aprove preco e modelo para publicarmos.`,
-    link: `/my-account/ativos/${d.entityId}`,
+    link: `/painel/vender/ativos`,
   }),
   [NOTIFICACOES.ATIVO_PUBLICADO]: (d) => ({
     title: "Ativo publicado",
     body: `"${d.assetName}" ja esta no catalogo da RED.`,
-    link: `/my-account/ativos/${d.entityId}`,
+    link: `/painel/vender/ativos`,
   }),
   [NOTIFICACOES.ATIVO_VENDIDO]: (d) => ({
     title: "Ativo vendido",
     body: `"${d.assetName}" foi vendido.`,
-    link: `/my-account/vendas`,
+    link: `/painel/vender/vendas`,
   }),
   [NOTIFICACOES.VALOR_A_RECEBER]: (d) => ({
     title: "Valor disponivel para repasse",
     body: `A operacao foi concluida e R$ ${d.amount} entrou em "a receber".`,
-    link: `/my-account/financeiro`,
+    link: `/painel/vender/financeiro`,
   }),
   [NOTIFICACOES.PAGAMENTO_REALIZADO]: (d) => ({
     title: "Pagamento realizado",
     body: `Repasse de R$ ${d.amount} efetuado.`,
-    link: `/my-account/financeiro`,
+    link: `/painel/vender/financeiro`,
   }),
   [NOTIFICACOES.NOVA_CONSULTA]: (d) => ({
     title: "Nova consulta recebida",
     body: `${d.buyerName} consultou "${d.assetName}".`,
-    link: `/gestao/comercial/consultas/${d.entityId}`,
+    link: `/gestao/comercial/consultas`,
   }),
   [NOTIFICACOES.NOVO_ENVIO]: (d) => ({
     title: "Novo ativo enviado para avaliacao",
     body: `Envio ${d.reference} aguardando curadoria.`,
-    link: `/gestao/comercial/envios/${d.entityId}`,
+    link: `/gestao/comercial/ativos`,
   }),
   [NOTIFICACOES.VENDA_REALIZADA]: (d) => ({
     title: "Venda realizada",
     body: `Pedido ${d.reference} confirmado.`,
-    link: `/gestao/comercial/vendas/${d.entityId}`,
+    link: `/gestao/comercial/vendas`,
   }),
   [NOTIFICACOES.REPASSE_PENDENTE]: (d) => ({
     title: "Repasse pendente",

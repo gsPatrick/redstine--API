@@ -8,6 +8,12 @@ const guardar = catchAsync(async (req, res) =>
   created(res, await service.guardarImagens(req.files))
 );
 
+// Guarda numa subpasta propria: fotos de envio ainda nao pertencem a nenhum
+// ativo, e separa-las facilita a limpeza dos envios recusados.
+const guardarDoEnvio = catchAsync(async (req, res) =>
+  created(res, await service.guardarImagens(req.files, { subpasta: "envios" }))
+);
+
 const anexarAoAtivo = catchAsync(async (req, res) =>
   created(res, await service.anexarAoAtivo(req.params.assetId, req.files))
 );
@@ -21,4 +27,4 @@ const reordenar = catchAsync(async (req, res) =>
   ok(res, await service.reordenar(req.params.assetId, req.body.imageIds))
 );
 
-module.exports = { guardar, anexarAoAtivo, remover, reordenar };
+module.exports = { guardar, guardarDoEnvio, anexarAoAtivo, remover, reordenar };

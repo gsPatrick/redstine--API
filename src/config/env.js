@@ -131,6 +131,17 @@ function assertEnv() {
   if (env.isProduction && env.jwt.secret.length < 32) {
     faltando.push("JWT_SECRET (minimo 32 caracteres em producao)");
   }
+  // O URL publico entra no endereco de cada ficheiro enviado, e esse endereco
+  // fica GRAVADO no banco. Ficar no default de localhost em producao nao da
+  // erro nenhum no upload: as fotos sobem, o envio e criado, e so muito depois
+  // alguem repara que nenhuma imagem abre — e ai o valor errado ja esta
+  // persistido em varios registos. Melhor nao subir.
+  if (env.isProduction && env.app.publicUrl.includes("localhost")) {
+    faltando.push(
+      "APP_PUBLIC_URL (o endereco publico da API; sem ele as fotos enviadas ficam gravadas apontando para localhost)"
+    );
+  }
+
   // Gateway real sem credencial falha no primeiro checkout, nao no boot —
   // por isso a checagem sobe para aqui.
   if (env.payments.provider !== "manual") {

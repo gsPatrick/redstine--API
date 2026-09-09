@@ -10,8 +10,23 @@ const { ROLES } = require("../../config/constants");
 
 const router = Router();
 
-// Upload e operacao de curadoria — nao e publico.
-router.use(requireAuth, requireRole(ROLES.ADMIN, ROLES.CURADOR));
+// Tudo aqui exige sessao. O que muda por rota e QUEM pode fazer o que.
+router.use(requireAuth);
+
+/**
+ * Fotos de um ativo que o fornecedor esta enviando para avaliacao.
+ *
+ * Precisa ser acessivel a qualquer utilizador autenticado: quem envia um ativo
+ * pelo painel e o fornecedor, nao a curadoria. As demais rotas deste ficheiro
+ * continuam restritas porque mexem no catalogo — anexam, reordenam e apagam
+ * imagens de ativos ja existentes. Esta nao toca em nenhum ativo: recebe os
+ * ficheiros, guarda e devolve os URLs, que o formulario manda de volta em
+ * `fotos`. Os limites de tipo e tamanho sao os mesmos.
+ */
+router.post("/submission-images", imagens("files", 8), controller.guardarDoEnvio);
+
+// Dali para baixo e operacao de curadoria sobre o catalogo.
+router.use(requireRole(ROLES.ADMIN, ROLES.CURADOR));
 
 router.post("/images", imagens("files"), controller.guardar);
 
