@@ -19,8 +19,12 @@ const detalhe = catchAsync(async (req, res) => {
   ok(res, await service.porId(req.params.id));
 });
 
+const atualizar = catchAsync(async (req, res) =>
+  ok(res, await service.atualizar(req.params.id, req.body, { atorId: req.user?.id }))
+);
+
 const iniciarAvaliacao = catchAsync(async (req, res) => {
   ok(res, await service.iniciarAvaliacao(req.params.id));
 });
 
-module.exports = { criar, listar, detalhe, iniciarAvaliacao };
+module.exports = { criar, listar, detalhe, atualizar, iniciarAvaliacao };

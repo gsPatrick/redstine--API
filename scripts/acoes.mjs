@@ -109,6 +109,21 @@ if (envio) {
   console.log("  (sem envio recebido para avaliar)");
 }
 
+// Edição do envio
+const editavel = (await chamar("GET","/submissions?perPage=1",admin)).json.data[0];
+if (editavel) {
+  const nome = `[smoke] envio corrigido ${Date.now()}`;
+  const ed = await chamar("PATCH",`/submissions/${editavel.id}`,admin,{
+    assetType: nome, city:"Pilares - RJ", attributes:{ condicao:"seminovo" },
+  });
+  ok("Editar dados do envio", ed.status===200, `(${ed.status})`);
+  const relido = (await chamar("GET",`/submissions/${editavel.id}`,admin)).json.data;
+  ok("Edição do envio persiste", relido.assetType===nome && relido.city==="Pilares - RJ");
+  // Mesclar, nao substituir: `origem` foi gravado no envio e nao pode sumir
+  // porque o formulario da curadoria nao mostra esse campo.
+  ok("attributes é mesclado, não substituído", Boolean(relido.attributes?.origem) && relido.attributes?.condicao==="seminovo");
+}
+
 // Gestão do ativo
 console.log("\n== GESTÃO DO ATIVO ==");
 const alvo = (await chamar("GET","/assets/admin?perPage=1",admin)).json.data[0];
@@ -150,6 +165,11 @@ if (alvo2) {
   ok("Fornecedor não edita ativo do catálogo", fornEdita.status===403, `(veio ${fornEdita.status})`);
   const fornFoto = await chamar("POST",`/uploads/assets/${alvo2.id}/images`,forn);
   ok("Fornecedor não mexe nas fotos do catálogo", fornFoto.status===403, `(veio ${fornFoto.status})`);
+}
+const envio2 = (await chamar("GET","/submissions?perPage=1",admin)).json.data[0];
+if (envio2) {
+  const fornEditaEnvio = await chamar("PATCH",`/submissions/${envio2.id}`,forn,{ city:"invadido" });
+  ok("Fornecedor não edita envio", fornEditaEnvio.status===403, `(veio ${fornEditaEnvio.status})`);
 }
 
 console.log(mau ? `\n${mau} ação com problema` : "\ntodas as ações da tela funcionam");

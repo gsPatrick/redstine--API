@@ -17,6 +17,12 @@ router.post("/", optionalAuth, validate({ body: schemas.criarSchema }), controll
 
 router.get("/", interno, validate({ query: schemas.listarQuerySchema }), controller.listar);
 router.get("/:id", interno, validate({ params: schemas.idParamSchema }), controller.detalhe);
+router.patch(
+  "/:id",
+  interno,
+  validate({ params: schemas.idParamSchema, body: schemas.atualizarSchema }),
+  controller.atualizar
+);
 router.post(
   "/:id/start-review",
   interno,

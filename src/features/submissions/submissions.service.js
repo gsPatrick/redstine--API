@@ -98,4 +98,47 @@ async function iniciarAvaliacao(id) {
   return submission;
 }
 
-module.exports = { criar, listar, porId, iniciarAvaliacao };
+/**
+ * Corrige os dados de um envio.
+ *
+ * O envio chega por formulario livre — nome de ativo abreviado, cidade sem UF,
+ * quantidade escrita no campo errado. A curadoria precisa arrumar isso ANTES
+ * de aprovar, porque e a partir daqui que o ativo nasce; corrigir so depois
+ * significaria arrumar duas vezes, no envio e no ativo.
+ *
+ * Fica registado em auditoria com o antes e o depois: alterar o que um terceiro
+ * declarou tem de ser rastreavel.
+ */
+async function atualizar(id, dados, { atorId = null } = {}) {
+  const submission = await db.Submission.findByPk(id);
+  if (!submission) throw AppError.notFound("Envio nao encontrado.", "SUBMISSION_NOT_FOUND");
+
+  const antes = submission.toJSON();
+
+  // `attributes` e mesclado, nao substituido: o formulario da curadoria manda
+  // so os campos que mostra, e trocar o objeto inteiro apagaria `origem` e o
+  // que mais tenha sido gravado no envio.
+  const patch = { ...dados };
+  if (dados.attributes) {
+    patch.attributes = { ...(submission.attributes || {}), ...dados.attributes };
+  }
+
+  await submission.update(patch);
+
+  const mudou = Object.keys(dados).filter(
+    (k) => JSON.stringify(antes[k]) !== JSON.stringify(submission[k])
+  );
+
+  await audit.registrar({
+    entity: "submission",
+    entityId: submission.id,
+    action: "edicao",
+    antes: Object.fromEntries(mudou.map((k) => [k, antes[k]])),
+    depois: Object.fromEntries(mudou.map((k) => [k, submission[k]])),
+    ator: { id: atorId },
+  });
+
+  return porId(submission.id);
+}
+
+module.exports = { criar, listar, porId, iniciarAvaliacao, atualizar };

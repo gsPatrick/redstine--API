@@ -106,7 +106,11 @@ async function main() {
 
   const ativos = [];
   for (const [i, a] of catalogo.entries()) {
-    const existente = await db.Asset.findOne({ where: { name: a.nome, supplierId: fornecedor.id } });
+    // Procura pelo SKU, nao pelo nome: o nome e editavel no Painel de Gestao,
+    // e depois de alguem renomear um ativo demo o seed deixava de o encontrar,
+    // tentava criar outro e batia no SKU fixo, que continua ocupado.
+    const sku = `RED-${String(451 - i).padStart(4, "0")}`;
+    const existente = await db.Asset.findOne({ where: { sku } });
     const dados = {
       supplierId: fornecedor.id,
       categoryId: construcao.id,
@@ -133,7 +137,7 @@ async function main() {
       ? await existente.update(dados)
       : await db.Asset.create({
           ...dados,
-          sku: `RED-${String(451 - i).padStart(4, "0")}`,
+          sku,
           slug: await slugUnico(db.Asset, a.nome),
         });
 
@@ -299,5 +303,6 @@ async function main() {
 
 main().catch((e) => {
   console.error("seed-demo falhou:", e.message);
+  if (e.errors) console.error(e.errors.map((x) => `  ${x.path}: ${x.message}`).join("\n"));
   process.exit(1);
 });
