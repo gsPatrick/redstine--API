@@ -63,6 +63,8 @@ const CONTRATO_GESTAO = [
   ["Gestão Visão Geral / variações", "/management/overview", (d) => d.variacoes, ["vendasRealizadas","valorVendido","consultasRecebidas"]],
   ["Gestão Visão Geral / pendências", "/management/overview", (d) => d.alertas, ["consultasEmAberto","ativosAguardandoAprovacao","enviosSemAvaliacao","repassesForaDoPrazo","prazoRepasseHoras"]],
   ["Gestão Visão Geral / gráfico vendas", "/management/overview", (d) => d.graficos?.evolucaoVendas?.[0], ["rotulo","valor"]],
+  ["Gestão Ativo / edição", "__ativo__", (d) => d, ["id","name","sku","slug","shortDescription","description","categoryId","subcategoryId","condition","location","brand","material","color","size","quantity","originalQuantity","unit","price","marketPrice","saleMode","saleFormat","availability","commercialModel","featured","attributes","status","imagens","publishedAt","supplierApprovedAt","createdAt","updatedAt"]],
+  ["Gestão Ativo / imagem", "__ativo__", (d) => d.imagens?.[0], ["id","url","position"]],
   ["Gestão Envios / linha", "/submissions", (d) => primeira(d), ["id","reference","assetType","approximateQuantity","company","name","email","city","photos","status","createdAt"]],
   ["Gestão Envio / detalhe", "__envio__", (d) => d, ["id","reference","assetType","description","approximateQuantity","notes","photos","attributes","city","name","company","email","phone","supplierId","status","createdAt","avaliacoes"]],
   ["Gestão Visão Geral / gráfico categoria", "/management/overview", (d) => d.graficos?.vendasPorCategoria?.[0], ["rotulo","valor","cor","percentual"]],
@@ -95,12 +97,14 @@ const compraId = (await get("/me/purchases", tkComp)).json.data[0]?.id;
 const consultaId = (await get("/me/consultations", tkComp)).json.data[0]?.id;
 const movId = (await get("/management/financial/movements", tkAdmin)).json.data[0]?.id;
 const envioId = (await get("/submissions", tkAdmin)).json.data[0]?.id;
+const ativoId = (await get("/assets/admin?perPage=1", tkAdmin)).json.data[0]?.id;
 
 const resolver = (rota) =>
   rota === "__compra__" ? `/me/purchases/${compraId}`
   : rota === "__consulta__" ? `/me/consultations/${consultaId}`
   : rota === "__mov__" ? `/management/financial/movements/${movId}`
   : rota === "__envio__" ? `/submissions/${envioId}`
+  : rota === "__ativo__" ? `/assets/admin/${ativoId}`
   : rota;
 
 let faltas = 0, vazios = 0, okc = 0;

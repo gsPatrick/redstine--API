@@ -109,6 +109,25 @@ if (envio) {
   console.log("  (sem envio recebido para avaliar)");
 }
 
+// Gestão do ativo
+console.log("\n== GESTÃO DO ATIVO ==");
+const alvo = (await chamar("GET","/assets/admin?perPage=1",admin)).json.data[0];
+if (alvo) {
+  const nome = `[smoke] editado ${Date.now()}`;
+  const ed = await chamar("PATCH",`/assets/${alvo.id}`,admin,{ name:nome, brand:"Marca X", attributes:{ peso:"9 kg" } });
+  ok("Editar dados do ativo", ed.status===200, `(${ed.status})`);
+  const relido = (await chamar("GET",`/assets/admin/${alvo.id}`,admin)).json.data;
+  ok("Edição persiste", relido.name===nome && relido.brand==="Marca X" && relido.attributes?.peso==="9 kg");
+
+  // Um salto que a API nao permite tem de ser recusado, senao o front so
+  // descobre a regra pelo erro depois do clique.
+  const salto = await chamar("PATCH",`/assets/${alvo.id}/status`,admin,{ status:"vendido" });
+  const valido = ["rascunho","em_avaliacao","aguardando_aprovacao","aprovado"].includes(relido.status);
+  ok("Transição inválida é recusada", !valido || salto.status>=400, `(estado ${relido.status}, veio ${salto.status})`);
+} else {
+  console.log("  (sem ativo para editar)");
+}
+
 // Separação de acesso
 console.log("\n== SEPARAÇÃO DE ACESSO ==");
 const semToken = await chamar("GET","/management/financial/movements");
@@ -125,6 +144,13 @@ const fornNosEnvios = await chamar("GET","/submissions",forn);
 ok("Fornecedor não vê a fila de envios de todos", fornNosEnvios.status===403, `(veio ${fornNosEnvios.status})`);
 const fornAvalia = await chamar("POST","/submissions/00000000-0000-4000-8000-000000000000/evaluations",forn,{approved:true});
 ok("Fornecedor não avalia envio", fornAvalia.status===403, `(veio ${fornAvalia.status})`);
+const alvo2 = (await chamar("GET","/assets/admin?perPage=1",admin)).json.data[0];
+if (alvo2) {
+  const fornEdita = await chamar("PATCH",`/assets/${alvo2.id}`,forn,{ name:"invadido" });
+  ok("Fornecedor não edita ativo do catálogo", fornEdita.status===403, `(veio ${fornEdita.status})`);
+  const fornFoto = await chamar("POST",`/uploads/assets/${alvo2.id}/images`,forn);
+  ok("Fornecedor não mexe nas fotos do catálogo", fornFoto.status===403, `(veio ${fornFoto.status})`);
+}
 
 console.log(mau ? `\n${mau} ação com problema` : "\ntodas as ações da tela funcionam");
 process.exit(mau?1:0);
