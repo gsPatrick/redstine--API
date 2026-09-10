@@ -402,6 +402,9 @@ function linhaDeVenda(p) {
     data: p.pedido?.createdAt || p.createdAt,
     ativo: p.item?.nameSnapshot || p.ativo?.name || "—",
     assetId: p.assetId,
+    // O slug ja vinha no include e nao era exposto; sem ele a tela de Vendas
+    // nao tinha como abrir a pagina do ativo vendido.
+    slug: p.ativo?.slug || null,
     quantidade: p.item?.quantity || null,
     valorVenda: cent(p.grossAmount),
     custos: cent(p.approvedCosts),
