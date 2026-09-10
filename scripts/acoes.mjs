@@ -143,6 +143,40 @@ if (alvo) {
   console.log("  (sem ativo para editar)");
 }
 
+// Cadastro direto e publicação
+console.log("\n== CADASTRO DIRETO NO CATÁLOGO ==");
+const cat0 = (await chamar("GET","/catalog/categories")).json.data[0];
+const criado = await chamar("POST","/assets",admin,{
+  name:`[smoke] cadastro direto ${Date.now()}`, categoryId:cat0.id, price:120, saleMode:"direta", quantity:5,
+});
+ok("Criar ativo pela gestão", criado.status===201 || criado.status===200, `(${criado.status})`);
+
+if (criado.json?.data?.id) {
+  const novoId = criado.json.data.id;
+  ok("Nasce em rascunho", criado.json.data.status === "rascunho", `(${criado.json.data.status})`);
+
+  for (const st of ["em_avaliacao","aguardando_aprovacao","aprovado","publicado"]) {
+    await chamar("PATCH",`/assets/${novoId}/status`,admin,{ status: st });
+  }
+  const publicado = (await chamar("GET",`/assets/admin/${novoId}`,admin)).json.data;
+  // Sem isto o operador da RED cadastra o proprio acervo e nunca consegue
+  // publicar: nao ha fornecedor terceiro para dar a aprovacao que a regra pede.
+  ok("Ativo próprio chega a publicado", publicado.status==="publicado", `(${publicado.status})`);
+  ok("Publicação registra quem autorizou o preço", Boolean(publicado.supplierApprovedBy));
+
+  // E a protecao de quem tem fornecedor de verdade tem de continuar de pe.
+  const forn0 = (await chamar("GET","/users?role=fornecedor&perPage=1",admin)).json.data[0];
+  const deTerceiro = (await chamar("POST","/assets",admin,{
+    name:`[smoke] de terceiro ${Date.now()}`, categoryId:cat0.id, supplierId:forn0.id, price:100, saleMode:"direta",
+  })).json.data;
+  for (const st of ["em_avaliacao","aguardando_aprovacao","aprovado"]) {
+    await chamar("PATCH",`/assets/${deTerceiro.id}/status`,admin,{ status: st });
+  }
+  const bloqueado = await chamar("PATCH",`/assets/${deTerceiro.id}/status`,admin,{ status:"publicado" });
+  ok("Ativo de terceiro ainda exige aprovação do fornecedor",
+     bloqueado.json?.error?.code === "SUPPLIER_APPROVAL_REQUIRED", `(${bloqueado.status})`);
+}
+
 // Separação de acesso
 console.log("\n== SEPARAÇÃO DE ACESSO ==");
 const semToken = await chamar("GET","/management/financial/movements");

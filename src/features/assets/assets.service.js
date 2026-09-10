@@ -313,11 +313,24 @@ async function mudarStatus(id, novoStatus, { motivo, ator } = {}) {
 
   if (novoStatus === ASSET_STATUS.PUBLICADO) {
     // A regra central da RED: nada e comercializado por preco nao autorizado.
+    //
+    // Duas situacoes dispensam a aprovacao porque nao ha terceiro a proteger:
+    // o ativo nao ter fornecedor (e da propria RED), e quem publica ser o
+    // proprio fornecedor — nesse caso o consentimento sobre o preco e o
+    // proprio ato de publicar. Em ambas a autorizacao fica registada em nome
+    // de quem publicou, para que ativo publicado continue a ter sempre preco
+    // autorizado e um autorizador com nome.
+    const proprioDono = !asset.supplierId || asset.supplierId === ator?.id;
+
     if (!asset.supplierApprovedAt) {
-      throw AppError.unprocessable(
-        "Publicacao exige aprovacao do fornecedor sobre preco e modelo.",
-        "SUPPLIER_APPROVAL_REQUIRED"
-      );
+      if (!proprioDono) {
+        throw AppError.unprocessable(
+          "Publicacao exige aprovacao do fornecedor sobre preco e modelo.",
+          "SUPPLIER_APPROVAL_REQUIRED"
+        );
+      }
+      patch.supplierApprovedAt = new Date();
+      patch.supplierApprovedBy = ator?.id || null;
     }
     if (asset.saleMode === MODALIDADES.DIRETA && (asset.price === null || Number(asset.price) <= 0)) {
       throw AppError.unprocessable(
