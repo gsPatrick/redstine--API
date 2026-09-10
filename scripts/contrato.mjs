@@ -47,6 +47,7 @@ const CONTRATO = [
   ["Dashboard Vendas / fluxo", "/me/sales-dashboard", (d) => d.fluxo, ["ativosVendidos","vendasRealizadas","recebido"]],
   ["Dashboard Vendas / gráfico 1", "/me/sales-dashboard", (d) => d.graficos?.resultados?.[0], ["rotulo","realizado","recebido"]],
   ["Dashboard Vendas / gráfico 2", "/me/sales-dashboard", (d) => d.graficos?.ativosPorStatus?.[0], ["rotulo","valor","cor"]],
+  ["Área do Cliente / ativo a aprovar", "/me/my-assets", (d) => primeira(d), ["id","nome","preco","precoMercado","modelo","participacao","receitaPotencial","quantidadeDisponivel","unidade","statusChave"]],
   ["Meus Ativos / linha", "/me/my-assets", (d) => primeira(d), ["id","nome","imagem","codigo","categoria","subcategoria","local","modelo","preco","participacao","receitaPotencial","quantidadeOriginal","quantidadeDisponivel","condicao","status","publicadoEm","atualizadoEm"]],
   ["Vendas / linha", "/me/sales", (d) => primeira(d), ["id","venda","data","ativo","quantidade","valorVenda","participacao","valorFornecedor","modelo","statusRetirada","status"]],
   ["Financeiro / pagamentos", "/me/payments", (d) => primeira(d), ["id","data","venda","ativo","valor","meio","comprovante"]],
@@ -63,6 +64,12 @@ const CONTRATO_GESTAO = [
   ["Gestão Visão Geral / variações", "/management/overview", (d) => d.variacoes, ["vendasRealizadas","valorVendido","consultasRecebidas"]],
   ["Gestão Visão Geral / pendências", "/management/overview", (d) => d.alertas, ["consultasEmAberto","ativosAguardandoAprovacao","enviosSemAvaliacao","repassesForaDoPrazo","prazoRepasseHoras"]],
   ["Gestão Visão Geral / gráfico vendas", "/management/overview", (d) => d.graficos?.evolucaoVendas?.[0], ["rotulo","valor"]],
+  ["Gestão Pedidos / linha", "/orders", (d) => primeira(d), ["id","reference","buyerName","buyerEmail","status","paymentStatus","pickupStatus","subtotal","total","createdAt","itens"]],
+  ["Gestão Pedido / detalhe", "__pedido__", (d) => d, ["id","reference","buyerName","buyerEmail","buyerPhone","status","paymentMethod","paymentStatus","paymentConfirmedAt","pickupStatus","pickupLocation","pickupAddress","pickupContactName","pickupScheduledAt","pickupInstructions","subtotal","approvedCosts","total","itens","repasses","operationCompletedAt"]],
+  ["Gestão Pedido / item", "__pedido__", (d) => d.itens?.[0], ["id","nameSnapshot","unitPrice","quantity","total"]],
+  ["Gestão Pedido / conclusão", "__conclusao__", (d) => d, ["concluida","pode","condicoes"]],
+  ["Gestão Categorias / categoria", "/catalog/categories", (d) => primeira(d), ["id","name","slug","subcategorias"]],
+  ["Gestão Relatórios / por fornecedor", "/management/reports/by-supplier?periodo=tudo", (d) => primeira(d), ["fornecedor","operacoes","valorBruto","repasse","receitaRed"]],
   ["Gestão Ativo / edição", "__ativo__", (d) => d, ["id","name","sku","slug","shortDescription","description","categoryId","subcategoryId","condition","location","brand","material","color","size","quantity","originalQuantity","unit","price","marketPrice","saleMode","saleFormat","availability","commercialModel","featured","attributes","status","imagens","publishedAt","supplierApprovedAt","createdAt","updatedAt"]],
   ["Gestão Ativo / imagem", "__ativo__", (d) => d.imagens?.[0], ["id","url","position"]],
   ["Gestão Envios / linha", "/submissions", (d) => primeira(d), ["id","reference","assetType","approximateQuantity","company","name","email","city","photos","status","createdAt"]],
@@ -98,6 +105,7 @@ const consultaId = (await get("/me/consultations", tkComp)).json.data[0]?.id;
 const movId = (await get("/management/financial/movements", tkAdmin)).json.data[0]?.id;
 const envioId = (await get("/submissions", tkAdmin)).json.data[0]?.id;
 const ativoId = (await get("/assets/admin?perPage=1", tkAdmin)).json.data[0]?.id;
+const pedidoId = (await get("/orders?perPage=1", tkAdmin)).json.data[0]?.id;
 
 const resolver = (rota) =>
   rota === "__compra__" ? `/me/purchases/${compraId}`
@@ -105,6 +113,8 @@ const resolver = (rota) =>
   : rota === "__mov__" ? `/management/financial/movements/${movId}`
   : rota === "__envio__" ? `/submissions/${envioId}`
   : rota === "__ativo__" ? `/assets/admin/${ativoId}`
+  : rota === "__pedido__" ? `/orders/${pedidoId}`
+  : rota === "__conclusao__" ? `/orders/${pedidoId}/completion`
   : rota;
 
 let faltas = 0, vazios = 0, okc = 0;

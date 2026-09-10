@@ -70,9 +70,17 @@ async function main() {
   console.log("\ncatalogo");
   const cats = await req("GET", "/catalog/categories");
   const categorias = cats.json?.data || [];
-  ok("3 categorias semeadas", categorias.length === 3, `(veio ${categorias.length})`);
-  const totalSubs = categorias.reduce((n, c) => n + (c.subcategorias?.length || 0), 0);
-  ok("15 subcategorias", totalSubs === 15, `(veio ${totalSubs})`);
+  // Presenca, nao contagem exata: criar categoria passou a ser possivel pela
+  // tela de Configuracoes, e um total fixo quebraria o smoke toda vez que
+  // alguem cadastrasse uma linha de produto nova — que e uso legitimo.
+  const SEMEADAS = ["red-construcao", "red-equipamentos", "red-mobiliario"];
+  const faltando = SEMEADAS.filter((slug) => !categorias.some((c) => c.slug === slug));
+  ok("as 3 categorias semeadas existem", faltando.length === 0, `(faltam ${faltando.join(", ")})`);
+
+  const subsSemeadas = categorias
+    .filter((c) => SEMEADAS.includes(c.slug))
+    .reduce((n, c) => n + (c.subcategorias?.length || 0), 0);
+  ok("as 15 subcategorias semeadas existem", subsSemeadas >= 15, `(veio ${subsSemeadas})`);
 
   const construcao = categorias.find((c) => c.slug === "red-construcao");
 

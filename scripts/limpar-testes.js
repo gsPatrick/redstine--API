@@ -24,6 +24,21 @@ async function main() {
   });
   const ids = alvos.map((a) => a.id);
 
+  // Categorias de teste vao a parte: nao dependem de existir ativo [smoke], e
+  // ficavam para tras poluindo o catalogo e os filtros. So apaga as vazias —
+  // uma categoria com ativo dentro nunca e de teste.
+  const catsTeste = await db.Category.findAll({
+    where: { name: { [Op.iLike]: "%teste%" } },
+    attributes: ["id", "name"],
+  });
+  for (const c of catsTeste) {
+    const usada = await db.Asset.count({ where: { categoryId: c.id }, paranoid: false });
+    if (usada) continue;
+    await db.Subcategory.destroy({ where: { categoryId: c.id }, force: true });
+    await db.Category.destroy({ where: { id: c.id }, force: true });
+    console.log(`categoria de teste removida: ${c.name}`);
+  }
+
   if (!ids.length) {
     console.log("nada a limpar: nenhum ativo de teste encontrado.");
     return db.sequelize.close();
