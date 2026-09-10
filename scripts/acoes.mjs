@@ -114,14 +114,21 @@ const editavel = (await chamar("GET","/submissions?perPage=1",admin)).json.data[
 if (editavel) {
   const nome = `[smoke] envio corrigido ${Date.now()}`;
   const ed = await chamar("PATCH",`/submissions/${editavel.id}`,admin,{
-    assetType: nome, city:"Pilares - RJ", attributes:{ condicao:"seminovo" },
+    assetType: nome, city:"Pilares - RJ", attributes:{ condicao:"seminovo", marcaSmoke:"x" },
   });
   ok("Editar dados do envio", ed.status===200, `(${ed.status})`);
   const relido = (await chamar("GET",`/submissions/${editavel.id}`,admin)).json.data;
   ok("Edição do envio persiste", relido.assetType===nome && relido.city==="Pilares - RJ");
-  // Mesclar, nao substituir: `origem` foi gravado no envio e nao pode sumir
-  // porque o formulario da curadoria nao mostra esse campo.
-  ok("attributes é mesclado, não substituído", Boolean(relido.attributes?.origem) && relido.attributes?.condicao==="seminovo");
+
+  // Mesclar e nao substituir: o formulario da curadoria manda so os campos que
+  // mostra, e trocar o objeto inteiro apagaria o resto. Planta-se uma marca e
+  // confere-se que ela sobrevive a um segundo PATCH que nao a menciona — assim
+  // o teste nao depende de o envio sorteado ter vindo do painel.
+  const seg = await chamar("PATCH",`/submissions/${editavel.id}`,admin,{ attributes:{ condicao:"usado_bom" } });
+  const relido2 = (await chamar("GET",`/submissions/${editavel.id}`,admin)).json.data;
+  ok("attributes é mesclado, não substituído",
+     relido2.attributes?.marcaSmoke === "x" && relido2.attributes?.condicao === "usado_bom",
+     `(${JSON.stringify(relido2.attributes)})`);
 }
 
 // Gestão do ativo
@@ -177,6 +184,50 @@ if (criado.json?.data?.id) {
      bloqueado.json?.error?.code === "SUPPLIER_APPROVAL_REQUIRED", `(${bloqueado.status})`);
 }
 
+// Aprovacao do fornecedor e ciclo do pedido
+console.log("\n== APROVAÇÃO DO FORNECEDOR ==");
+const cat1 = (await chamar("GET","/catalog/categories")).json.data[0];
+const forn1 = (await chamar("GET","/users?role=fornecedor&perPage=1",admin)).json.data[0];
+const aAprovar = (await chamar("POST","/assets",admin,{
+  name:`[smoke] aguarda aprovacao ${Date.now()}`, categoryId:cat1.id, supplierId:forn1.id,
+  price:176, quantity:50, saleMode:"direta",
+})).json.data;
+for (const st of ["em_avaliacao","aguardando_aprovacao"]) {
+  await chamar("PATCH",`/assets/${aAprovar.id}/status`,admin,{ status: st });
+}
+// Publicar antes da aprovacao tem de ser recusado: e a regra central da RED.
+await chamar("PATCH",`/assets/${aAprovar.id}/status`,admin,{ status:"aprovado" });
+const semAprovacao = await chamar("PATCH",`/assets/${aAprovar.id}/status`,admin,{ status:"publicado" });
+ok("Publicar sem aprovação do fornecedor é recusado",
+   semAprovacao.json?.error?.code === "SUPPLIER_APPROVAL_REQUIRED", `(${semAprovacao.status})`);
+
+console.log("\n== CICLO DO PEDIDO ==");
+const pendente = (await chamar("GET","/orders?status=aguardando_confirmacao&perPage=1",admin)).json.data[0];
+if (pendente) {
+  const antes = (await chamar("GET",`/orders/${pendente.id}/completion`,admin)).json.data;
+  ok("Conclusão bloqueada com pendência", antes.pode === false);
+
+  const conf = await chamar("POST",`/orders/${pendente.id}/confirm`,admin);
+  ok("Confirmar a venda", conf.status===200 || conf.status===201, `(${conf.status})`);
+
+  await chamar("PATCH",`/orders/${pendente.id}/payment`,admin,{ status:"pago" });
+  await chamar("PATCH",`/orders/${pendente.id}/pickup`,admin,{ status:"concluida", local:"[smoke] galpao" });
+
+  const depois = (await chamar("GET",`/orders/${pendente.id}/completion`,admin)).json.data;
+  ok("Condições cumpridas liberam a conclusão", depois.pode === true,
+     `(faltam: ${(depois.condicoes||[]).filter(c=>!c.ok).map(c=>c.chave).join(",") || "nenhuma"})`);
+
+  const fim = await chamar("POST",`/orders/${pendente.id}/complete`,admin);
+  ok("Concluir a operação", fim.status===200 || fim.status===201, `(${fim.status})`);
+  const relido = (await chamar("GET",`/orders/${pendente.id}`,admin)).json.data;
+  ok("Pedido fica concluído", relido.status === "concluido", `(${relido.status})`);
+  // A conclusao integral e o que libera o repasse — sem ela o fornecedor
+  // nunca recebe, por mais que o pedido pareca pronto.
+  ok("Conclusão gera repasse ao fornecedor", (relido.repasses || []).length > 0);
+} else {
+  console.log("  (sem pedido aguardando confirmação)");
+}
+
 // Separação de acesso
 console.log("\n== SEPARAÇÃO DE ACESSO ==");
 const semToken = await chamar("GET","/management/financial/movements");
@@ -199,6 +250,13 @@ if (alvo2) {
   ok("Fornecedor não edita ativo do catálogo", fornEdita.status===403, `(veio ${fornEdita.status})`);
   const fornFoto = await chamar("POST",`/uploads/assets/${alvo2.id}/images`,forn);
   ok("Fornecedor não mexe nas fotos do catálogo", fornFoto.status===403, `(veio ${fornFoto.status})`);
+}
+const pedido1 = (await chamar("GET","/orders?perPage=1",admin)).json.data[0];
+if (pedido1) {
+  const fornConfirma = await chamar("POST",`/orders/${pedido1.id}/confirm`,forn);
+  ok("Fornecedor não confirma pedido", fornConfirma.status===403, `(veio ${fornConfirma.status})`);
+  const compVePedidos = await chamar("GET","/orders",comp);
+  ok("Comprador não vê os pedidos de todos", compVePedidos.status===403, `(veio ${compVePedidos.status})`);
 }
 const envio2 = (await chamar("GET","/submissions?perPage=1",admin)).json.data[0];
 if (envio2) {
