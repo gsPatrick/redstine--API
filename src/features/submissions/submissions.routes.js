@@ -12,7 +12,9 @@ const { ROLES } = require("../../config/constants");
 const router = Router();
 const interno = [requireAuth, requireRole(ROLES.ADMIN, ROLES.CURADOR)];
 
-// Envio publico — o formulario da pagina Vender nao exige conta.
+// Envio sem sessao. Desde a revisao do cliente (item 4) o site NAO usa mais
+// esta porta: enviar ativo exige conta, e o formulario vive no painel. Fica
+// como canal de intake — importacao, integracao, envio recebido por fora.
 router.post("/", optionalAuth, validate({ body: schemas.criarSchema }), controller.criar);
 
 router.get("/", interno, validate({ query: schemas.listarQuerySchema }), controller.listar);
