@@ -4,9 +4,10 @@
  * Remove os ativos criados pelos testes.
  *
  * O smoke test cria um ativo publicado a cada execução, e eles apareciam na
- * vitrine junto com o catálogo real. Marcá-los com `[smoke]` no nome e limpar
- * aqui é mais seguro do que apagar por data ou por padrão de slug — nenhum
- * ativo real vai ter essa marca.
+ * vitrine junto com o catálogo real. Marcá-los com `[smoke]` (scripts de API)
+ * ou `[e2e]` (conferência no navegador) no nome e limpar aqui é mais seguro do
+ * que apagar por data ou por padrão de slug — nenhum ativo real vai ter essas
+ * marcas.
  *
  * Só toca no que tem a marca. Ativos reais, do seed de demonstração e do
  * catálogo importado ficam intactos.
@@ -17,8 +18,11 @@ const { Op } = require("sequelize");
 const db = require("../src/models");
 
 async function main() {
+  // Duas marcas, nao uma: `[smoke]` vem dos scripts de API e `[e2e]` das
+  // conferencias no navegador. Enquanto so a primeira era limpa, os ativos
+  // criados pelo Playwright ficavam na vitrine real.
   const alvos = await db.Asset.findAll({
-    where: { name: { [Op.iLike]: "%[smoke]%" } },
+    where: { [Op.or]: [{ name: { [Op.iLike]: "%[smoke]%" } }, { name: { [Op.iLike]: "%[e2e]%" } }] },
     attributes: ["id"],
     paranoid: false,
   });

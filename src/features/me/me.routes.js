@@ -37,6 +37,14 @@ router.get("/consultations/:id", validate({ params: ps.idParamSchema }), painel.
 // --------------------------------------------------------------------- Vender
 router.get("/sales-dashboard", validate({ query: ps.periodoSchema }), painel.painelDeVendas);
 router.get("/my-assets", validate({ query: ps.ativosQuerySchema }), painel.ativos);
+/**
+ * Detalhe do proprio ativo (revisao do cliente, item 9).
+ *
+ * Sem parametro de fornecedor na rota, como todo o resto daqui: o `supplierId`
+ * vem do token e entra no `where`. Pedir o ativo de outro fornecedor devolve
+ * 404, nao 403 — um 403 confirmaria que aquele id existe.
+ */
+router.get("/my-assets/:id", validate({ params: ps.idParamSchema }), painel.ativo);
 router.get("/sales", validate({ query: ps.vendasQuerySchema }), painel.vendas);
 router.get("/payments", validate({ query: ps.periodoSchema }), painel.pagamentos);
 router.post("/asset-submissions", validate({ body: ps.envioSchema }), painel.enviarAtivo);

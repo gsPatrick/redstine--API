@@ -14,6 +14,19 @@ const criar = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * Venda fechada fora do site. Exige operador autenticado — ao contrario do
+ * checkout, que e aberto: aqui alguem da RED esta a afirmar que uma venda
+ * aconteceu, e essa afirmacao tem de ter autor.
+ */
+const registrarVendaExterna = catchAsync(async (req, res) => {
+  const order = await service.registrarVendaExterna(req.body, {
+    atorId: req.user.id,
+    ator: { id: req.user.id, role: req.user.role },
+  });
+  created(res, order);
+});
+
 const confirmar = catchAsync(async (req, res) => {
   ok(res, await service.confirmar(req.params.id));
 });
@@ -55,6 +68,7 @@ const concluir = catchAsync(async (req, res) =>
 
 module.exports = {
   criar,
+  registrarVendaExterna,
   confirmar,
   mudarStatus,
   listar,

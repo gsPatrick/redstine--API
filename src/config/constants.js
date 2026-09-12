@@ -183,6 +183,46 @@ const PAGAMENTOS = {
 };
 
 /**
+ * Canal em que a venda foi fechada (revisao do cliente, item 11).
+ *
+ * A RED fecha venda por WhatsApp e por telefone, e essas vendas TEM de existir
+ * no sistema: sem elas o repasse ao fornecedor nao e gerado e os numeros da
+ * gestao ficam menores do que a realidade.
+ *
+ * O canal e um rotulo de PROCEDENCIA, nao um fluxo paralelo: a venda externa
+ * percorre o mesmo pedido, baixa o mesmo estoque e gera o mesmo repasse. Sem
+ * esta coluna ninguem distinguiria depois o que veio do site do que veio do
+ * telefone — e e essa a pergunta que a gestao faz.
+ *
+ * `site` e o default porque e o unico canal que existia antes: os pedidos ja
+ * gravados vieram todos do checkout.
+ */
+const CANAIS_VENDA = {
+  SITE: "site",
+  WHATSAPP: "whatsapp",
+  TELEFONE: "telefone",
+  PRESENCIAL: "presencial",
+  OUTRO: "outro",
+};
+
+const ROTULO_CANAL_VENDA = {
+  [CANAIS_VENDA.SITE]: "Site",
+  [CANAIS_VENDA.WHATSAPP]: "WhatsApp",
+  [CANAIS_VENDA.TELEFONE]: "Telefone",
+  [CANAIS_VENDA.PRESENCIAL]: "Presencial",
+  [CANAIS_VENDA.OUTRO]: "Outro",
+};
+
+/**
+ * Janela de deduplicacao da visualizacao de produto (revisao do cliente, item 33).
+ *
+ * Contar cada carregamento da pagina transformaria o F5 em metrica: um ativo
+ * com tres refreshes pareceria mais procurado do que um visto por tres pessoas
+ * diferentes. Dentro da janela, o mesmo visitante no mesmo ativo conta UMA vez.
+ */
+const JANELA_VISUALIZACAO_MINUTOS = 360;
+
+/**
  * Status FINANCEIRO do repasse (documento oficial, secao 18).
  * Independente do status do ativo e do status de retirada — de proposito.
  *
@@ -314,5 +354,8 @@ module.exports = {
   SUBMISSION_STATUS,
   ORDER_STATUS,
   PAGAMENTOS,
+  CANAIS_VENDA,
+  ROTULO_CANAL_VENDA,
+  JANELA_VISUALIZACAO_MINUTOS,
   QUOTE_STATUS,
 };

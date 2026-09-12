@@ -40,6 +40,18 @@ module.exports = (sequelize) => {
       unit: { type: DataTypes.STRING(30), allowNull: false, defaultValue: "unidade" },
 
       /**
+       * Visualizacoes da pagina do ativo (revisao do cliente, item 33).
+       *
+       * Contador desnormalizado, de proposito. A verdade auditavel continua na
+       * tabela `events` — e de la que este numero foi reconstruido na migracao.
+       * O que nao da e derivar por agregacao a cada leitura: o catalogo devolve
+       * 100 cards e isso seria uma consulta por card no caminho mais quente do
+       * site. Quem incrementa e o events.service, no mesmo lugar em que decide
+       * se a visita conta ou e o mesmo visitante a recarregar a pagina.
+       */
+      viewsCount: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+
+      /**
        * price  = valor praticado pela RED.
        * marketPrice = referencia de mercado. E este par que sustenta a promessa
        * publica de "ate 50% do preco de mercado" — sem marketPrice nao existe

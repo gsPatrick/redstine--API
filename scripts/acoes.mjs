@@ -387,6 +387,272 @@ if (pendente) {
   console.log("  (sem pedido aguardando confirmação)");
 }
 
+// ---------------------------------------------------------------------------
+// Detalhe do proprio ativo, na visao do fornecedor (revisão do cliente, item 9)
+// ---------------------------------------------------------------------------
+console.log("\n== DETALHE DO ATIVO DO FORNECEDOR ==");
+const meus = (await chamar("GET","/me/my-assets?perPage=100",forn)).json.data;
+ok("O fornecedor tem ativos para detalhar", meus.length > 0);
+
+if (meus.length) {
+  const det = await chamar("GET",`/me/my-assets/${meus[0].id}`,forn);
+  ok("Abrir o detalhe do próprio ativo", det.status===200, `(${det.status})`);
+  const d = det.json?.data;
+  // O detalhe existe para mostrar MAIS do que a linha da tabela: se ele nao
+  // trouxer fotos, ficha e historico, a tela nova nao se justifica.
+  ok("O detalhe traz o que a lista não tem (fotos, descrição, histórico)",
+     Array.isArray(d?.fotos) && Array.isArray(d?.historico) && d?.historico.length > 0 &&
+     "descricao" in d,
+     JSON.stringify({fotos:d?.fotos?.length, hist:d?.historico?.length}));
+  ok("O detalhe traz as visualizações do ativo", typeof d?.visualizacoes === "number", `(${d?.visualizacoes})`);
+  ok("O detalhe diz se a aprovação cabe, em vez de a tela adivinhar",
+     typeof d?.podeAprovar === "boolean", `(${d?.podeAprovar})`);
+
+  // Um ativo parado a espera de aprovacao tem de oferecer a aprovacao DENTRO
+  // do detalhe — e o pedido literal do item 9.
+  const aguardando = meus.find(a=>a.statusChave==="aguardando_aprovacao");
+  if (aguardando) {
+    const antesDet = (await chamar("GET",`/me/my-assets/${aguardando.id}`,forn)).json.data;
+    ok("Ativo aguardando aprovação abre o detalhe com o botão de aprovar", antesDet.podeAprovar === true);
+    const aprov = await chamar("POST",`/assets/${aguardando.id}/supplier-approval`,forn);
+    ok("Aprovar de dentro do detalhe funciona", aprov.status===200 || aprov.status===201, `(${aprov.status})`);
+    const depoisDet = (await chamar("GET",`/me/my-assets/${aguardando.id}`,forn)).json.data;
+    ok("Depois de aprovar, o botão desaparece e o carimbo fica",
+       depoisDet.podeAprovar === false && Boolean(depoisDet.aprovadoEm),
+       `(${depoisDet.statusChave}, ${depoisDet.aprovadoEm})`);
+  } else {
+    // O seed pode nao ter ativo parado nesse estado. Em vez de saltar a prova
+    // — que e o pedido literal do item 9 —, cria-se o caso: sem isto a
+    // aprovacao de dentro do detalhe ficava sem cobertura nenhuma.
+    const catA = (await chamar("GET","/catalog/categories")).json.data[0];
+    const fornA = (await chamar("GET","/users?role=fornecedor&perPage=100",admin)).json.data
+      .find(u => u.email === "joao.silva@empresa.com.br");
+    const novo = (await chamar("POST","/assets",admin,{
+      name:`[smoke] aguarda aprovacao detalhe ${Date.now()}`, categoryId:catA.id,
+      supplierId:fornA.id, price:250, quantity:4, saleMode:"direta",
+    })).json.data;
+    for (const st of ["em_avaliacao","aguardando_aprovacao"]) {
+      await chamar("PATCH",`/assets/${novo.id}/status`,admin,{ status: st });
+    }
+    const antesDet = (await chamar("GET",`/me/my-assets/${novo.id}`,forn)).json?.data;
+    ok("Ativo aguardando aprovação abre o detalhe com o botão de aprovar",
+       antesDet?.podeAprovar === true, `(${antesDet?.statusChave})`);
+    const aprov = await chamar("POST",`/assets/${novo.id}/supplier-approval`,forn);
+    ok("Aprovar de dentro do detalhe funciona", aprov.status===200 || aprov.status===201, `(${aprov.status})`);
+    const depoisDet = (await chamar("GET",`/me/my-assets/${novo.id}`,forn)).json.data;
+    ok("Depois de aprovar, o botão desaparece e o carimbo fica",
+       depoisDet.podeAprovar === false && Boolean(depoisDet.aprovadoEm),
+       `(${depoisDet.statusChave}, ${depoisDet.aprovadoEm})`);
+  }
+
+  // O isolamento: o ativo de OUTRO fornecedor nao pode sair daqui. E 404 e nao
+  // 403 de proposito — 403 confirmaria que aquele id existe.
+  const deOutro = (await chamar("GET","/assets/admin?perPage=100",admin)).json.data
+    .find(a => a.supplierId && a.supplierId !== meus[0].supplierId && !meus.some(m=>m.id===a.id));
+  if (deOutro) {
+    const invasao = await chamar("GET",`/me/my-assets/${deOutro.id}`,forn);
+    ok("Fornecedor NÃO vê o detalhe do ativo de outro fornecedor",
+       invasao.status===404, `(veio ${invasao.status})`);
+  } else {
+    console.log("  (sem ativo de outro fornecedor para testar o isolamento)");
+  }
+  const inexistente = await chamar("GET","/me/my-assets/00000000-0000-4000-8000-000000000000",forn);
+  ok("Ativo inexistente e ativo alheio respondem igual (404)", inexistente.status===404, `(${inexistente.status})`);
+  const semLogin = await chamar("GET",`/me/my-assets/${meus[0].id}`);
+  ok("O detalhe do ativo exige autenticação", semLogin.status===401, `(${semLogin.status})`);
+}
+
+// ---------------------------------------------------------------------------
+// Venda fechada fora do site (revisão do cliente, item 11)
+// ---------------------------------------------------------------------------
+console.log("\n== VENDA FORA DO SITE ==");
+const catE = (await chamar("GET","/catalog/categories")).json.data[0];
+// O fornecedor DO TOKEN, nao "o primeiro da lista": os ativos criados aqui
+// precisam de pertencer a quem depois vai conferir as proprias vendas, senao
+// a prova passava a ser sobre o fornecedor errado.
+const fornE = (await chamar("GET","/users?role=fornecedor&perPage=100",admin)).json.data
+  .find(u => u.email === "joao.silva@empresa.com.br");
+ok("O fornecedor de teste existe no seed", Boolean(fornE));
+
+const publicarComFornecedor = async (dados) => {
+  const novo = (await chamar("POST","/assets",admin,{ supplierId: fornE.id, ...dados })).json.data;
+  for (const st of ["em_avaliacao","aguardando_aprovacao"]) {
+    await chamar("PATCH",`/assets/${novo.id}/status`,admin,{ status: st });
+  }
+  await chamar("POST",`/assets/${novo.id}/supplier-approval`,admin);
+  for (const st of ["aprovado","publicado"]) {
+    await chamar("PATCH",`/assets/${novo.id}/status`,admin,{ status: st });
+  }
+  return novo;
+};
+
+const paraWhats = await publicarComFornecedor({
+  name:`[smoke] venda whatsapp ${Date.now()}`, categoryId:catE.id, price:100, saleMode:"direta", quantity:10,
+});
+
+const externa = await chamar("POST","/orders/external",admin,{
+  channel:"whatsapp",
+  buyerName:"[smoke] comprador do WhatsApp", buyerEmail:"smoke.whatsapp@teste.com", buyerPhone:"21999990000",
+  paymentMethod:"pix", notes:"[smoke] fechado no WhatsApp",
+  items:[{ assetId: paraWhats.id, quantity: 3, unitPrice: 120 }],
+});
+ok("Registrar venda fechada no WhatsApp", externa.status===201 || externa.status===200, JSON.stringify(externa.json).slice(0,160));
+
+const ve = externa.json?.data;
+ok("A venda externa nasce CONFIRMADA — não fica à espera de alguém confirmar",
+   ve?.status === "confirmado", `(${ve?.status})`);
+ok("O canal fica gravado no pedido", ve?.channel === "whatsapp", `(${ve?.channel})`);
+ok("Fica registrado quem da RED lançou a venda", Boolean(ve?.registeredById));
+// O preco negociado e o que vale; o do catalogo continua onde estava.
+ok("O preço negociado é o do pedido, não o do catálogo",
+   Number(ve?.itens?.[0]?.unitPrice) === 120 && Number(ve?.total) === 360,
+   `(${ve?.itens?.[0]?.unitPrice} / ${ve?.total})`);
+const catalogoIntacto = (await chamar("GET",`/assets/admin/${paraWhats.id}`,admin)).json.data;
+ok("Registrar a venda NÃO altera o preço publicado do ativo",
+   Number(catalogoIntacto.price) === 100, `(${catalogoIntacto.price})`);
+
+// O ponto que o cliente destacou: o estoque tem de baixar DE VERDADE, senao
+// o site continua a oferecer o que ja foi vendido.
+ok("A venda externa baixa o estoque do ativo de verdade",
+   catalogoIntacto.quantity === 7, `(de 10 para ${catalogoIntacto.quantity})`);
+
+// E tem de gerar repasse, senao o fornecedor nunca recebe por esta venda.
+const repasseExterno = (ve?.repasses || [])[0];
+ok("A venda externa gera repasse ao fornecedor",
+   Boolean(repasseExterno) && Number(repasseExterno.supplierAmount) > 0,
+   JSON.stringify({p:repasseExterno?.supplierPercent, v:repasseExterno?.supplierAmount}));
+ok("O repasse da venda externa nasce em venda_realizada, não em a_receber",
+   repasseExterno?.status === "venda_realizada", `(${repasseExterno?.status})`);
+
+// O SNAPSHOT: mudar a tabela de percentuais depois nao pode mover esta venda.
+const pctAntes = Number(repasseExterno?.supplierPercent);
+await chamar("PATCH","/management/settings",admin,{ "split.catalogo.fornecedor": 55 });
+const releitura = (await chamar("GET",`/orders/${ve.id}`,admin)).json.data;
+ok("Mudar o percentual NÃO recalcula a venda externa já registrada",
+   Number(releitura.repasses?.[0]?.supplierPercent) === pctAntes,
+   `(era ${pctAntes}, ficou ${releitura.repasses?.[0]?.supplierPercent})`);
+await chamar("PATCH","/management/settings",admin,{ "split.catalogo.fornecedor": 65 });
+
+// Pagamento e retirada podem vir na mesma chamada, e e isso que permite
+// concluir a operacao e liberar o repasse sem uma segunda passagem.
+const externa2 = await chamar("POST","/orders/external",admin,{
+  channel:"telefone",
+  buyerName:"[smoke] comprador do telefone", buyerEmail:"smoke.telefone@teste.com",
+  paymentMethod:"transferencia",
+  items:[{ assetId: paraWhats.id, quantity: 1 }],
+  paymentStatus:"pago", paymentReference:"TED-SMOKE",
+  pickupStatus:"concluida", pickupLocation:"[smoke] galpão",
+});
+const ve2 = externa2.json?.data;
+ok("Pagamento e retirada entram na mesma chamada",
+   ve2?.paymentStatus === "pago" && ve2?.pickupStatus === "concluida",
+   `(${ve2?.paymentStatus} / ${ve2?.pickupStatus})`);
+ok("Sem preço na linha, vale o preço do catálogo",
+   Number(ve2?.itens?.[0]?.unitPrice) === 100, `(${ve2?.itens?.[0]?.unitPrice})`);
+const compl = (await chamar("GET",`/orders/${ve2.id}/completion`,admin)).json.data;
+ok("A venda externa já registrada paga e retirada pode ser concluída na hora",
+   compl.pode === true,
+   `(faltam: ${(compl.condicoes||[]).filter(c=>!c.ok).map(c=>c.chave).join(",")||"nenhuma"})`);
+const fecha = await chamar("POST",`/orders/${ve2.id}/complete`,admin);
+ok("Concluir a venda externa libera o repasse", fecha.status===200, `(${fecha.status})`);
+const repasseLiberado = (await chamar("GET",`/orders/${ve2.id}`,admin)).json.data.repasses?.[0];
+ok("O repasse da venda externa passa a a_receber depois da conclusão",
+   repasseLiberado?.status === "a_receber", `(${repasseLiberado?.status})`);
+
+// A venda externa tem de aparecer nos numeros e nas telas da gestao, senao
+// registra-la nao resolve o problema que o cliente descreveu.
+const vendasGestao = (await chamar("GET","/management/sales?periodo=tudo&perPage=100",admin)).json.data;
+const linhaExterna = vendasGestao.find(v => v.venda === `#${ve.reference}`);
+ok("A venda externa entra em Comercial > Vendas com o canal visível",
+   linhaExterna?.canal === "WhatsApp" && linhaExterna?.canalChave === "whatsapp",
+   JSON.stringify({c:linhaExterna?.canal}));
+const doFornecedor = (await chamar("GET","/me/sales?perPage=100",forn)).json.data;
+ok("A venda externa aparece nas Vendas do fornecedor",
+   doFornecedor.some(v => v.venda === `#${ve.reference}`));
+
+// Filtro de procedencia: e a pergunta "quanto veio do site".
+const soWhats = (await chamar("GET","/orders?channel=whatsapp&perPage=100",admin)).json.data;
+ok("Filtrar pedidos por canal", soWhats.length > 0 && soWhats.every(p=>p.channel==="whatsapp"));
+const soSite = (await chamar("GET","/orders?channel=site&perPage=5",admin)).json.data;
+ok("Os pedidos do site continuam marcados como site", soSite.every(p=>p.channel==="site"));
+
+// Recusas que precisam de existir.
+const semCanal = await chamar("POST","/orders/external",admin,{
+  buyerName:"x y", buyerEmail:"a@b.com", paymentMethod:"pix",
+  items:[{ assetId: paraWhats.id, quantity:1 }],
+});
+ok("Venda externa sem canal é recusada", semCanal.status===422 || semCanal.status===400, `(${semCanal.status})`);
+const canalSite = await chamar("POST","/orders/external",admin,{
+  channel:"site", buyerName:"x y", buyerEmail:"a@b.com", paymentMethod:"pix",
+  items:[{ assetId: paraWhats.id, quantity:1 }],
+});
+ok("Registrar a mão uma venda como 'site' é recusado", canalSite.status===422 || canalSite.status===400, `(${canalSite.status})`);
+const demais = await chamar("POST","/orders/external",admin,{
+  channel:"whatsapp", buyerName:"x y", buyerEmail:"a@b.com", paymentMethod:"pix",
+  items:[{ assetId: paraWhats.id, quantity: 9999 }],
+});
+ok("Venda externa acima do estoque é recusada — o estoque não pode ficar negativo",
+   demais.json?.error?.code === "INSUFFICIENT_QUANTITY", `(${demais.status} ${demais.json?.error?.code})`);
+
+// Ativo sob consulta: entra na venda externa COM preco (foi negociado no
+// atendimento), e continua recusado sem preco.
+const sobConsulta = await publicarComFornecedor({
+  name:`[smoke] sob consulta ${Date.now()}`, categoryId:catE.id, saleMode:"consulta", quantity:5, price:80,
+});
+const semPreco = await chamar("POST","/orders/external",admin,{
+  channel:"telefone", buyerName:"x y", buyerEmail:"a@b.com", paymentMethod:"pix",
+  items:[{ assetId: sobConsulta.id, quantity:1 }],
+});
+ok("Ativo sob consulta sem preço na linha continua recusado",
+   semPreco.json?.error?.code === "QUOTE_REQUIRED", `(${semPreco.status} ${semPreco.json?.error?.code})`);
+const comPreco = await chamar("POST","/orders/external",admin,{
+  channel:"telefone", buyerName:"x y", buyerEmail:"a@b.com", paymentMethod:"pix",
+  items:[{ assetId: sobConsulta.id, quantity:1, unitPrice: 777 }],
+});
+ok("Ativo sob consulta é vendível fora do site com o preço negociado",
+   comPreco.status===201 && Number(comPreco.json?.data?.total) === 777,
+   `(${comPreco.status} ${comPreco.json?.data?.total})`);
+
+// ---------------------------------------------------------------------------
+// Visualizações no card e na página do produto (revisão do cliente, item 33)
+// ---------------------------------------------------------------------------
+console.log("\n== VISUALIZAÇÕES ==");
+const alvoView = (await chamar("GET","/assets?perPage=1")).json.data[0];
+ok("O card do catálogo já traz a contagem de visualizações",
+   typeof alvoView?.views === "number", `(${alvoView?.views})`);
+
+const verComoSessao = (sessao) => fetch(`${BASE}/events/product-view`, {
+  method:"POST",
+  headers:{ "Content-Type":"application/json", ...(sessao?{ "x-session-id": sessao }:{}) },
+  body: JSON.stringify({ assetId: alvoView.id }),
+}).then(async r => ({ status:r.status, json: await r.json().catch(()=>null) }));
+
+const base = alvoView.views;
+const v1 = await verComoSessao("smoke-sessao-A");
+ok("Registrar a visualização conta", v1.json?.data?.contabilizada === true && v1.json?.data?.visualizacoes === base + 1,
+   JSON.stringify(v1.json?.data));
+
+// O ponto do item: o mesmo visitante a recarregar a pagina nao pode contar de
+// novo — senao o F5 vira metrica.
+const v2 = await verComoSessao("smoke-sessao-A");
+ok("O mesmo visitante a recarregar NÃO conta outra vez",
+   v2.json?.data?.contabilizada === false && v2.json?.data?.visualizacoes === base + 1,
+   JSON.stringify(v2.json?.data));
+
+const v3 = await verComoSessao("smoke-sessao-B");
+ok("Um visitante diferente conta", v3.json?.data?.contabilizada === true && v3.json?.data?.visualizacoes === base + 2,
+   JSON.stringify(v3.json?.data));
+
+const relidoView = (await chamar("GET",`/assets/slug/${alvoView.slug}`)).json.data;
+ok("A contagem chega ao payload da página do produto", relidoView.views === base + 2, `(${relidoView.views})`);
+const naListagem = (await chamar("GET",`/assets?search=${encodeURIComponent(alvoView.name)}`)).json.data
+  .find(a=>a.id===alvoView.id);
+ok("A contagem chega ao card da listagem, sem consulta por card", naListagem?.views === base + 2, `(${naListagem?.views})`);
+
+const funil = await chamar("GET",`/events/assets/${alvoView.id}/funnel`,admin);
+ok("O funil do ativo conta as mesmas visualizações",
+   funil.json?.data?.visualizacoes >= base + 2, JSON.stringify(funil.json?.data));
+
 // Separação de acesso
 console.log("\n== SEPARAÇÃO DE ACESSO ==");
 const semToken = await chamar("GET","/management/financial/movements");
@@ -417,6 +683,29 @@ if (pedido1) {
   const compVePedidos = await chamar("GET","/orders",comp);
   ok("Comprador não vê os pedidos de todos", compVePedidos.status===403, `(veio ${compVePedidos.status})`);
 }
+// Registro de venda externa e acao interna: quem compra nao lanca venda.
+const compRegistra = await chamar("POST","/orders/external",comp,{
+  channel:"whatsapp", buyerName:"x y", buyerEmail:"a@b.com", paymentMethod:"pix",
+  items:[{ assetId:"00000000-0000-4000-8000-000000000000", quantity:1 }],
+});
+ok("Comprador não registra venda externa", compRegistra.status===403, `(veio ${compRegistra.status})`);
+const fornRegistra = await chamar("POST","/orders/external",forn,{
+  channel:"whatsapp", buyerName:"x y", buyerEmail:"a@b.com", paymentMethod:"pix",
+  items:[{ assetId:"00000000-0000-4000-8000-000000000000", quantity:1 }],
+});
+ok("Fornecedor não registra venda externa", fornRegistra.status===403, `(veio ${fornRegistra.status})`);
+const anonRegistra = await chamar("POST","/orders/external",null,{
+  channel:"whatsapp", buyerName:"x y", buyerEmail:"a@b.com", paymentMethod:"pix",
+  items:[{ assetId:"00000000-0000-4000-8000-000000000000", quantity:1 }],
+});
+ok("Venda externa exige autenticação", anonRegistra.status===401, `(veio ${anonRegistra.status})`);
+
+// Analytics de visualizacao e leitura de gestao; reportar a visita, nao.
+const fornVeFunil = await chamar("GET","/events/assets/00000000-0000-4000-8000-000000000000/funnel",forn);
+ok("Fornecedor não alcança o funil de eventos da gestão", fornVeFunil.status===403, `(veio ${fornVeFunil.status})`);
+const fornVeResumo = await chamar("GET","/events/summary",forn);
+ok("Fornecedor não alcança o resumo de eventos", fornVeResumo.status===403, `(veio ${fornVeResumo.status})`);
+
 const envio2 = (await chamar("GET","/submissions?perPage=1",admin)).json.data[0];
 if (envio2) {
   const fornEditaEnvio = await chamar("PATCH",`/submissions/${envio2.id}`,forn,{ city:"invadido" });

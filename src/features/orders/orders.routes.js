@@ -21,6 +21,20 @@ router.get(
   controller.porReferencia
 );
 
+/**
+ * Registro de venda fechada fora do site (revisao do cliente, item 11).
+ *
+ * Rota interna, nao publica: quem registra e a RED. Vem ANTES de `/:id` de
+ * proposito — declarada depois, o Express casaria "external" como um id e a
+ * validacao devolveria "uuid invalido" em vez de registrar a venda.
+ */
+router.post(
+  "/external",
+  interno,
+  validate({ body: schemas.vendaExternaSchema }),
+  controller.registrarVendaExterna
+);
+
 router.get("/", interno, validate({ query: schemas.listarQuerySchema }), controller.listar);
 router.get("/:id", interno, validate({ params: schemas.idParamSchema }), controller.detalhe);
 router.post("/:id/confirm", interno, validate({ params: schemas.idParamSchema }), controller.confirmar);

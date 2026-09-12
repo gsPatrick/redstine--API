@@ -152,6 +152,17 @@ function paraCatalogo(asset) {
     unit: json.unit,
     inStock: disponivel(json),
 
+    /**
+     * Visualizacoes (revisao do cliente, item 33).
+     *
+     * Vem do contador do proprio ativo, que ja veio na linha — nao de uma
+     * agregacao sobre `events`. E o que permite o card exibir o numero na
+     * listagem: contar por ativo aqui seria uma consulta por card.
+     *
+     * O nome `views` e o que o front le no card e na pagina do produto.
+     */
+    views: Number(json.viewsCount || 0),
+
     attributes: ficha(json),
   };
 }

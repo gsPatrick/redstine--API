@@ -21,6 +21,7 @@ Base: `/api/v1`. Tudo autenticado por `Authorization: Bearer <token>`.
 | Favoritos | `/painel/favoritos` | `GET /wishlist` · `POST /wishlist/:assetId/toggle` · `DELETE /wishlist/:assetId` |
 | Dashboard de Vendas | `/painel/vender` | `GET /me/sales-dashboard?periodo=30d` |
 | Meus Ativos | `/painel/vender/ativos` | `GET /me/my-assets?status=&search=` |
+| Detalhe do meu ativo | diálogo em `/painel/vender/ativos` | `GET /me/my-assets/:id` · `POST /assets/:id/supplier-approval` |
 | Vendas | `/painel/vender/vendas` | `GET /me/sales?periodo=&status=` |
 | Financeiro — movimentações | `/painel/vender/financeiro` | `GET /me/sales` |
 | Financeiro — histórico | aba da mesma tela | `GET /me/payments` |
@@ -71,6 +72,8 @@ retirada):
 | — atender consulta | ação da tela | `POST /quotes/:id/assign` · `POST /quotes/:id/respond` · `PATCH /quotes/:id/status` |
 | Comercial · Ativos | `/gestao/comercial/ativos` | `GET /management/assets?status=&category=&commercialModel=&search=` |
 | — mudar status do ativo | ação da tela | `PATCH /assets/:id/status` · `POST /assets/:id/supplier-approval` |
+| Comercial · Pedidos | `/gestao/comercial/pedidos` | `GET /orders?status=&channel=` · `GET /orders/:id` · `GET /orders/:id/completion` |
+| — registrar venda fora do site | ação da tela | `POST /orders/external` (cria e confirma: baixa estoque e gera repasse) |
 | Comercial · Vendas | `/gestao/comercial/vendas` | `GET /management/sales` + `GET /management/sales/summary` |
 | Financeiro · Movimentações | `/gestao/financeiro/movimentacoes` | `GET /management/financial/movements` |
 | Detalhe da Venda | `/gestao/financeiro/movimentacoes/[id]` | `GET /management/financial/movements/:id` |

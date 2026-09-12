@@ -13,6 +13,10 @@ const {
   PAYOUT_STATUS,
   MODELOS_COMERCIAIS,
   ROTULO_MODELO_COMERCIAL,
+  ROTULO_CONDICAO,
+  ROTULO_FORMA_VENDA,
+  ROTULO_DISPONIBILIDADE,
+  CAMPOS_TECNICOS,
 } = require("../../config/constants");
 
 /**
@@ -393,6 +397,194 @@ async function ativos(userId, query) {
   return { rows, count: r.count, page, perPage };
 }
 
+/**
+ * Detalhe do ativo na visao do FORNECEDOR (revisao do cliente, item 9).
+ *
+ * "Falta uma coluna com a opcao de ver mais detalhes sobre o ativo dele e
+ *  dentro desses detalhes um botao para eu conseguir aprovar."
+ *
+ * Existe como rota propria em vez de a tela reaproveitar a linha da lista por
+ * duas razoes concretas:
+ *
+ *  - A lista devolve o que cabe numa TABELA. O detalhe precisa de descricao,
+ *    de TODAS as fotos, da ficha tecnica e do historico — carregar isso para
+ *    100 linhas encheria a listagem de dados que ninguem le.
+ *  - O isolamento fica num lugar so. O `where` junta `id` e `supplierId`: um
+ *    ativo que nao e do fornecedor nao devolve 403 (que confirmaria que ele
+ *    existe) e sim 404, exatamente como um id inventado. Nao ha filtro visual
+ *    nenhum — o ativo alheio nunca sai do banco.
+ *
+ * O que o fornecedor NAO ve aqui e tao deliberado como o que ve: nao ha dado
+ * do comprador, nao ha receita da RED e nao ha custo de outro ativo.
+ */
+async function ativo(userId, id) {
+  const a = await db.Asset.findOne({
+    where: { id, supplierId: userId },
+    include: [
+      { model: db.Category, as: "categoria", attributes: ["id", "slug", "name"] },
+      { model: db.Subcategory, as: "subcategoria", attributes: ["id", "slug", "name"] },
+      {
+        model: db.AssetImage,
+        as: "imagens",
+        attributes: ["id", "url", "alt", "position"],
+        separate: true,
+        order: [["position", "ASC"]],
+      },
+    ],
+  });
+  if (!a) throw AppError.notFound("Ativo não encontrado.", "ASSET_NOT_FOUND");
+
+  const participacao = await participacaoPara(a.commercialModel);
+  const preco = cent(a.price);
+  const mercado = a.marketPrice ? cent(a.marketPrice) : null;
+
+  // Quantidade vendida sai de original - disponivel, a mesma conta da lista:
+  // duas contas diferentes para o mesmo numero divergiriam na primeira venda
+  // parcial.
+  const vendida = Math.max(0, a.originalQuantity - a.quantity);
+
+  return {
+    id: a.id,
+    codigo: a.sku,
+    slug: a.slug,
+    nome: a.name,
+    resumo: a.shortDescription || null,
+    descricao: a.description || null,
+
+    imagem: a.imagens?.[0]?.url || null,
+    // Todas as fotos, na ordem da galeria: o fornecedor quer conferir o que a
+    // RED publicou sobre o ativo DELE, e a primeira foto nao conta essa
+    // historia.
+    fotos: (a.imagens || []).map((i) => ({ id: i.id, url: i.url, alt: i.alt || a.name })),
+
+    categoria: a.categoria?.name || null,
+    subcategoria: a.subcategoria?.name || null,
+    local: a.location,
+    condicao: ROTULO_CONDICAO[a.condition] || null,
+    condicaoChave: a.condition,
+    marca: a.brand,
+    material: a.material,
+    cor: a.color,
+    tamanho: a.size,
+    formaVenda: ROTULO_FORMA_VENDA[a.saleFormat] || null,
+    disponibilidade: ROTULO_DISPONIBILIDADE[a.availability] || null,
+    modalidade: a.saleMode,
+    // Ficha tecnica com o mesmo rotulo do site: sem ela o detalhe do
+    // fornecedor mostraria menos sobre o ativo do que a pagina publica.
+    ficha: CAMPOS_TECNICOS.filter((c) => a.attributes?.[c]).map((c) => ({
+      campo: c,
+      valor: a.attributes[c],
+    })),
+
+    modelo: NOME_MODELO[a.commercialModel],
+    modeloChave: a.commercialModel,
+    preco,
+    precoMercado: mercado,
+    desconto: a.descontoPercentual(),
+    participacao,
+    receitaPotencial: cent((preco * a.quantity * participacao) / 100),
+    // Quanto ele ja recebeu ou vai receber por este ativo especifico, com o
+    // percentual PRATICADO em cada venda (snapshot do repasse) — nao com o
+    // percentual de hoje.
+    ...(await realizadoDoAtivo(userId, a.id)),
+
+    quantidadeOriginal: a.originalQuantity,
+    quantidadeDisponivel: a.quantity,
+    quantidadeVendida: vendida,
+    unidade: a.unit,
+
+    visualizacoes: Number(a.viewsCount || 0),
+
+    status: ROTULO_ASSET[a.status],
+    statusChave: a.status,
+    publicadoEm: a.publishedAt,
+    vendidoEm: a.soldAt,
+    criadoEm: a.createdAt,
+    atualizadoEm: a.updatedAt,
+    aprovadoEm: a.supplierApprovedAt,
+
+    /**
+     * O botao de aprovar mora DENTRO do detalhe, e e a API que diz se ele
+     * aparece. Deixar a tela decidir por comparacao de string levaria a
+     * oferecer o botao num ativo ja publicado — e a aprovacao seria recusada
+     * so depois do clique.
+     */
+    podeAprovar: a.status === ASSET_STATUS.AGUARDANDO_APROVACAO,
+    // Pagina publica so existe depois de publicado; sem o slug o botao
+    // "ver no site" levaria a um 404.
+    linkPublico: a.status === ASSET_STATUS.PUBLICADO && a.slug ? `/produto/${a.slug}` : null,
+
+    historico: await historicoDoAtivo(a),
+  };
+}
+
+/** Quanto este ativo ja rendeu ao fornecedor, pelos repasses que o citam. */
+async function realizadoDoAtivo(userId, assetId) {
+  const repasses = await db.Payout.findAll({
+    where: { supplierId: userId, assetId },
+    attributes: ["status", "supplierAmount", "grossAmount"],
+  });
+
+  const vivos = repasses.filter((r) => r.status !== PAYOUT_STATUS.CANCELADO);
+  return {
+    vendasDoAtivo: vivos.length,
+    valorVendidoDoAtivo: cent(vivos.reduce((t, r) => t + Number(r.grossAmount), 0)),
+    receitaRealizada: cent(vivos.reduce((t, r) => t + Number(r.supplierAmount), 0)),
+    receitaRecebida: cent(
+      repasses
+        .filter((r) => r.status === PAYOUT_STATUS.PAGO)
+        .reduce((t, r) => t + Number(r.supplierAmount), 0)
+    ),
+  };
+}
+
+/**
+ * Historico de status do ativo.
+ *
+ * Sai do log de auditoria — que e onde a mudanca de status fica registrada com
+ * data e motivo — e nao dos carimbos da tabela, que so guardam tres momentos.
+ * O fornecedor ve O QUE aconteceu e QUANDO; NAO ve quem da RED fez, porque o
+ * ator e informacao interna.
+ */
+async function historicoDoAtivo(a) {
+  const logs = await db.AuditLog.findAll({
+    where: { entity: "asset", entityId: a.id },
+    order: [["occurredAt", "ASC"]],
+  });
+
+  const linhas = [];
+  for (const log of logs) {
+    if (log.action === "cadastro") {
+      linhas.push({ data: log.occurredAt, titulo: "Ativo cadastrado na RED" });
+    } else if (log.action === "mudanca_status") {
+      const destino = log.after?.status;
+      linhas.push({
+        data: log.occurredAt,
+        titulo: `Status: ${ROTULO_ASSET[destino] || destino}`,
+        detalhe: log.notes || null,
+      });
+    } else if (log.action === "aprovacao_fornecedor") {
+      linhas.push({ data: log.occurredAt, titulo: "Preço e modelo aprovados por você" });
+    }
+    // `update` fica de fora de proposito: uma correcao de descricao pela
+    // curadoria nao e um acontecimento da vida comercial do ativo, e encheria
+    // a linha do tempo de ruido.
+  }
+
+  // Fallback para o acervo antigo, anterior ao log: sem isto o ativo
+  // importado aparecia com historico vazio, como se nunca tivesse existido.
+  if (!linhas.length) {
+    linhas.push({ data: a.createdAt, titulo: "Ativo cadastrado na RED" });
+    if (a.supplierApprovedAt) {
+      linhas.push({ data: a.supplierApprovedAt, titulo: "Preço e modelo aprovados por você" });
+    }
+    if (a.publishedAt) linhas.push({ data: a.publishedAt, titulo: "Publicado no catálogo" });
+    if (a.soldAt) linhas.push({ data: a.soldAt, titulo: "Vendido" });
+  }
+
+  return linhas.filter((l) => l.data).sort((x, y) => new Date(x.data) - new Date(y.data));
+}
+
 // -------------------------------------------------------------------- vendas
 
 const INCLUDE_VENDA = () => [
@@ -484,6 +676,7 @@ module.exports = {
   consultas,
   consulta,
   ativos,
+  ativo,
   vendas,
   pagamentos,
   statusDaCompra,

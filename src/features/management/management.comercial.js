@@ -11,6 +11,7 @@ const {
   PICKUP_STATUS,
   PAYOUT_STATUS,
   MODELOS_COMERCIAIS,
+  ROTULO_CANAL_VENDA,
 } = require("../../config/constants");
 
 const cent = (n) => Number(Number(n || 0).toFixed(2));
@@ -243,7 +244,7 @@ async function vendas(query, { comFinanceiro = false } = {}) {
       {
         model: db.Order,
         as: "pedido",
-        attributes: ["id", "reference", "createdAt", "buyerName", "buyerEmail", "pickupStatus", "status"],
+        attributes: ["id", "reference", "createdAt", "buyerName", "buyerEmail", "pickupStatus", "status", "channel"],
       },
       { model: db.OrderItem, as: "item", attributes: ["id", "nameSnapshot", "quantity", "unitPrice"] },
       { model: db.Asset, as: "ativo", attributes: ["id", "slug", "name", "sku", "categoryId"] },
@@ -272,6 +273,11 @@ async function vendas(query, { comFinanceiro = false } = {}) {
       modeloChave: p.commercialModel,
       participacaoFornecedor: Number(p.supplierPercent),
       statusRetirada: ROTULO_PICKUP[p.pedido?.pickupStatus],
+      // Procedencia da venda (revisao do cliente, item 11). Sem esta coluna a
+      // venda de WhatsApp entra nos numeros mas fica indistinguivel do site, e
+      // "quanto vendemos pelo site" volta a ser uma contagem a mao.
+      canal: ROTULO_CANAL_VENDA[p.pedido?.channel] || null,
+      canalChave: p.pedido?.channel || null,
       statusFinanceiro: ROTULO_PAYOUT[p.status],
       statusChave: p.status,
     };

@@ -15,6 +15,7 @@ const {
   MODALIDADES,
   PAYMENT_STATUS,
   PICKUP_STATUS,
+  CANAIS_VENDA,
 } = require("../../config/constants");
 
 const INCLUDES = () => [
@@ -47,8 +48,22 @@ const INCLUDES = () => [
  *  1. "O envio de interesse nao caracteriza reserva automatica" — o pedido
  *     nasce em AGUARDANDO_CONFIRMACAO e NAO baixa quantidade.
  *  2. Ativos "sob consulta" nao entram em pedido: viram cotacao.
+ *
+ * `externo` afrouxa exatamente DUAS coisas, e so para a venda registrada pela
+ * RED (revisao do cliente, item 11):
+ *
+ *  - o preco pode vir na linha. Numa venda por WhatsApp o valor foi negociado
+ *    ao telefone e nao e necessariamente o do catalogo; forcar o preco
+ *    publicado faria o operador editar o ativo so para poder registrar a
+ *    venda, e isso reescreveria o catalogo por causa de um caso pontual.
+ *  - o ativo "sob consulta" entra no pedido, desde que COM preco. E o caso
+ *    tipico: sob consulta significa que o preco se fecha no atendimento, e o
+ *    atendimento acabou de acontecer. Sem preco continua recusado.
+ *
+ * Nada mais muda: mesmo estoque, mesma confirmacao, mesmo repasse. Quem esta
+ * de fora e o checkout do site, onde `externo` e sempre falso.
  */
-async function criar(dados, { atorId = null } = {}) {
+async function criar(dados, { atorId = null, externo = false } = {}) {
   return db.sequelize.transaction(async (t) => {
     const ids = dados.items.map((i) => i.assetId);
 
@@ -74,7 +89,13 @@ async function criar(dados, { atorId = null } = {}) {
     for (const linha of dados.items) {
       const ativo = porId.get(linha.assetId);
 
-      if (ativo.saleMode === MODALIDADES.CONSULTA) {
+      // Preco combinado na linha: so a venda externa pode informa-lo, e e ele
+      // que libera o ativo sob consulta.
+      const precoInformado = externo && Number(linha.unitPrice) > 0
+        ? Number(Number(linha.unitPrice).toFixed(2))
+        : null;
+
+      if (ativo.saleMode === MODALIDADES.CONSULTA && precoInformado === null) {
         throw AppError.unprocessable(
           `"${ativo.name}" e sob consulta e nao pode ser comprado diretamente.`,
           "QUOTE_REQUIRED",
@@ -82,7 +103,7 @@ async function criar(dados, { atorId = null } = {}) {
         );
       }
 
-      if (ativo.price === null || Number(ativo.price) <= 0) {
+      if (precoInformado === null && (ativo.price === null || Number(ativo.price) <= 0)) {
         throw AppError.unprocessable(
           `"${ativo.name}" nao possui preco definido.`,
           "PRICE_MISSING",
@@ -98,7 +119,7 @@ async function criar(dados, { atorId = null } = {}) {
         );
       }
 
-      const unit = Number(ativo.price);
+      const unit = precoInformado === null ? Number(ativo.price) : precoInformado;
       const total = Number((unit * linha.quantity).toFixed(2));
       subtotal += total;
 
@@ -124,6 +145,9 @@ async function criar(dados, { atorId = null } = {}) {
         buyerDocument: dados.buyerDocument,
         billing: dados.billing || {},
         paymentMethod: dados.paymentMethod,
+        // Procedencia: `site` por omissao, porque o checkout nao informa canal.
+        channel: dados.channel || CANAIS_VENDA.SITE,
+        registeredById: externo ? atorId : null,
         notes: dados.notes,
         subtotal,
         // Retirada e transporte sao confirmados a parte — nao ha frete no total.
@@ -145,7 +169,12 @@ async function criar(dados, { atorId = null } = {}) {
         entity: "order",
         entityId: order.id,
         action: "cadastro",
-        depois: { status: order.status, total: order.total, reference: order.reference },
+        depois: {
+          status: order.status,
+          total: order.total,
+          reference: order.reference,
+          channel: order.channel,
+        },
         ator: atorId ? { id: atorId } : null,
       },
       { transaction: t }
@@ -243,6 +272,92 @@ async function confirmar(id) {
 
     return order;
   });
+}
+
+/**
+ * Venda fechada FORA do site (revisao do cliente, item 11).
+ *
+ * "Forma de registro de vendas fora do site no sistema."
+ *
+ * A RED fecha negocio por WhatsApp e por telefone. Enquanto essas vendas nao
+ * existiam no sistema, tres coisas ficavam erradas ao mesmo tempo: o estoque
+ * mentia (o ativo continuava a aparecer disponivel no site depois de vendido),
+ * o fornecedor nao tinha repasse gerado, e os numeros da gestao mostravam
+ * menos do que a RED realmente vendeu.
+ *
+ * A decisao de projeto e a mais importante daqui: NAO existe entidade nova.
+ * A venda externa e um Order comum, com `channel` a dizer de onde veio. Por
+ * isso ela herda, de graca e sem duplicacao, tudo o que ja estava feito e
+ * testado — a baixa de estoque, a regra financeira-mestre, o prazo de repasse,
+ * a conclusao integral, a auditoria e as telas de pedido. Um "registro de
+ * venda externa" com tabela propria teria de reimplementar cada uma dessas
+ * regras, e a primeira a divergir seria a do dinheiro.
+ *
+ * O fluxo e criar + confirmar, nesta ordem e usando os MESMOS services:
+ *
+ *  - `criar` valida disponibilidade, quantidade e preco.
+ *  - `confirmar` e o que baixa a quantidade de verdade e gera o repasse. Nao
+ *    ha atalho aqui: se a venda externa gravasse o pedido como confirmado por
+ *    conta propria, o estoque nao baixava e o repasse nao nascia — exatamente
+ *    os dois defeitos que este item existe para corrigir.
+ *
+ * Sobre o SNAPSHOT do percentual: ele e gravado por `payouts.gerarParaPedido`
+ * no momento desta confirmacao, com a tabela de percentuais vigente HOJE. Uma
+ * venda antiga registrada com atraso entra com o percentual de hoje, e isso e
+ * consciente: a alternativa seria reconstruir a tabela de percentuais numa data
+ * passada, que o sistema nao versiona. O que nunca acontece e o inverso —
+ * mudar a tabela amanha nao move este repasse nem nenhum outro.
+ *
+ * Pagamento e retirada sao OPCIONAIS: a venda por telefone costuma chegar ao
+ * sistema ja paga e ja retirada, e obrigar o operador a repetir os mesmos dois
+ * passos noutra tela levaria a vendas registadas e nunca concluidas — ou seja,
+ * repasse que nunca e liberado.
+ */
+async function registrarVendaExterna(dados, { atorId = null, ator = null } = {}) {
+  if (!dados.channel || dados.channel === CANAIS_VENDA.SITE) {
+    // Um registro manual marcado como `site` seria indistinguivel do checkout
+    // e tornaria a coluna de procedencia inutil justamente onde ela importa.
+    throw AppError.badRequest(
+      "Informe o canal em que a venda foi fechada.",
+      "CHANNEL_REQUIRED",
+      { canais: Object.values(CANAIS_VENDA).filter((c) => c !== CANAIS_VENDA.SITE) }
+    );
+  }
+
+  const criado = await criar(dados, { atorId, externo: true });
+
+  // A confirmacao e o passo que torna a venda real. Se ela falhar, o pedido
+  // fica visivel na lista como "aguardando confirmacao" em vez de desaparecer:
+  // o operador ve o que aconteceu e confirma a mao, sem redigitar a venda.
+  await confirmar(criado.id);
+
+  if (dados.paymentStatus) {
+    await registrarPagamento(criado.id, {
+      status: dados.paymentStatus,
+      reference: dados.paymentReference,
+      ator,
+    });
+  }
+
+  if (dados.pickupStatus) {
+    await registrarRetirada(criado.id, {
+      status: dados.pickupStatus,
+      local: dados.pickupLocation,
+      notes: dados.pickupNotes,
+      ator,
+    });
+  }
+
+  await audit.registrar({
+    entity: "order",
+    entityId: criado.id,
+    action: "registro_venda_externa",
+    depois: { channel: dados.channel, total: criado.total, reference: criado.reference },
+    ator,
+    notes: dados.notes,
+  });
+
+  return porId(criado.id);
 }
 
 /**
@@ -480,6 +595,7 @@ async function listar(query) {
   const where = {};
   if (query.status) where.status = query.status;
   if (query.buyerId) where.buyerId = query.buyerId;
+  if (query.channel) where.channel = query.channel;
 
   const resultado = await db.Order.findAndCountAll({
     where,
@@ -508,6 +624,7 @@ async function porReferencia(reference) {
 module.exports = {
   criar,
   confirmar,
+  registrarVendaExterna,
   mudarStatus,
   listar,
   porId,

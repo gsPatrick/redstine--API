@@ -51,6 +51,11 @@ const CONTRATO = [
   ["Dashboard Vendas / gráfico 1", "/me/sales-dashboard", (d) => d.graficos?.resultados?.[0], ["rotulo","realizado","recebido"]],
   ["Dashboard Vendas / gráfico 2", "/me/sales-dashboard", (d) => d.graficos?.ativosPorStatus?.[0], ["rotulo","valor","cor"]],
   ["Área do Cliente / ativo a aprovar", "/me/my-assets", (d) => primeira(d), ["id","nome","preco","precoMercado","modelo","participacao","receitaPotencial","quantidadeDisponivel","unidade","statusChave"]],
+  // Detalhe do ativo na visao do fornecedor (revisao do cliente, item 9). E o
+  // contrato mais sensivel desta tela: o botao de aprovar dentro do detalhe so
+  // aparece porque a API manda `podeAprovar`.
+  ["Meus Ativos / detalhe", "__meuAtivo__", (d) => d, ["id","codigo","slug","nome","descricao","fotos","categoria","subcategoria","local","condicao","marca","formaVenda","disponibilidade","ficha","modelo","preco","precoMercado","desconto","participacao","receitaPotencial","receitaRealizada","receitaRecebida","vendasDoAtivo","quantidadeOriginal","quantidadeDisponivel","quantidadeVendida","unidade","visualizacoes","status","statusChave","podeAprovar","linkPublico","historico","atualizadoEm"]],
+  ["Meus Ativos / detalhe · histórico", "__meuAtivo__", (d) => d.historico?.[0], ["data","titulo"]],
   ["Meus Ativos / linha", "/me/my-assets", (d) => primeira(d), ["id","nome","imagem","codigo","categoria","subcategoria","local","modelo","preco","participacao","receitaPotencial","quantidadeOriginal","quantidadeDisponivel","condicao","status","publicadoEm","atualizadoEm"]],
   ["Vendas / linha", "/me/sales", (d) => primeira(d), ["id","venda","data","ativo","quantidade","valorVenda","participacao","valorFornecedor","modelo","statusRetirada","status"]],
   ["Financeiro / pagamentos", "/me/payments", (d) => primeira(d), ["id","data","venda","ativo","valor","meio","comprovante"]],
@@ -61,7 +66,7 @@ const CONTRATO = [
   // lista (que opcoes ainda tem acervo), nao um item dela.
   ["Comprar / painel de filtros", "/assets?perPage=1", (d, meta) => meta.filtros, ["brand","location","condition","saleFormat","availability","category"]],
   ["Comprar / opção de filtro", "/assets?perPage=1", (d, meta) => meta.filtros?.location?.[0], ["value","label","count"]],
-  ["Comprar / card", "/assets?perPage=1", (d) => primeira(d), ["id","slug","name","price","regularPrice","onSale","images","categories","condition","brand","location","quantity","unit","inStock","attributes","commercialModel"]],
+  ["Comprar / card", "/assets?perPage=1", (d) => primeira(d), ["id","slug","name","price","regularPrice","onSale","images","categories","condition","brand","location","quantity","unit","inStock","attributes","commercialModel","views"]],
   ["Enviar Ativos / categorias", "/catalog/categories", (d) => primeira(d), ["id","name","subcategorias"]],
 ];
 
@@ -72,7 +77,7 @@ const CONTRATO_GESTAO = [
   ["Gestão Visão Geral / variações", "/management/overview", (d) => d.variacoes, ["vendasRealizadas","valorVendido","consultasRecebidas"]],
   ["Gestão Visão Geral / pendências", "/management/overview", (d) => d.alertas, ["consultasEmAberto","ativosAguardandoAprovacao","enviosSemAvaliacao","repassesForaDoPrazo","prazoRepasseHoras"]],
   ["Gestão Visão Geral / gráfico vendas", "/management/overview", (d) => d.graficos?.evolucaoVendas?.[0], ["rotulo","valor"]],
-  ["Gestão Pedidos / linha", "/orders", (d) => primeira(d), ["id","reference","buyerName","buyerEmail","status","paymentStatus","pickupStatus","subtotal","total","createdAt","itens"]],
+  ["Gestão Pedidos / linha", "/orders", (d) => primeira(d), ["id","reference","buyerName","buyerEmail","status","paymentStatus","pickupStatus","subtotal","total","createdAt","itens","channel"]],
   ["Gestão Pedido / detalhe", "__pedido__", (d) => d, ["id","reference","buyerName","buyerEmail","buyerPhone","status","paymentMethod","paymentStatus","paymentConfirmedAt","pickupStatus","pickupLocation","pickupAddress","pickupContactName","pickupScheduledAt","pickupInstructions","subtotal","approvedCosts","total","itens","repasses","operationCompletedAt"]],
   ["Gestão Pedido / item", "__pedido__", (d) => d.itens?.[0], ["id","nameSnapshot","unitPrice","quantity","total"]],
   ["Gestão Pedido / conclusão", "__conclusao__", (d) => d, ["concluida","pode","condicoes"]],
@@ -86,7 +91,7 @@ const CONTRATO_GESTAO = [
   ["Comercial Consultas / cartões", "/management/consultations/summary", (d) => d, ["total","novas","emAtendimento","respondidas","encerradas"]],
   ["Comercial Consultas / linha", "/management/consultations", (d) => primeira(d), ["id","data","cliente","ativo","quantidade","status","responsavel","atualizacao"]],
   ["Comercial Ativos / linha", "/management/assets", (d) => primeira(d), ["id","codigo","nome","fornecedor","categoria","local","modelo","participacaoFornecedor","preco","potencialFornecedor","potencialRed","status","publicadoEm"]],
-  ["Comercial Vendas / linha", "/management/sales", (d) => primeira(d), ["id","venda","data","cliente","fornecedor","ativo","quantidade","valorBruto","participacaoFornecedor","statusRetirada"]],
+  ["Comercial Vendas / linha", "/management/sales", (d) => primeira(d), ["id","venda","data","cliente","fornecedor","ativo","quantidade","valorBruto","participacaoFornecedor","statusRetirada","canal","canalChave"]],
   ["Comercial Vendas / cartões", "/management/sales/summary", (d) => d, ["vendasRealizadas","valorBrutoVendido","ticketMedio","aguardandoRetirada"]],
   ["Financeiro Movimentações / linha", "/management/financial/movements", (d) => primeira(d), ["id","data","venda","fornecedor","ativo","valorBruto","participacaoFornecedor","repasse","receitaRed","statusFinanceiro"]],
   ["Financeiro Movimentações / totais", "/management/financial/movements", (d, meta) => meta.totais, ["valorBruto","valorFornecedores","receitaRed","custosAprovados","valorLiquido"]],
@@ -114,6 +119,10 @@ const movId = (await get("/management/financial/movements", tkAdmin)).json.data[
 const envioId = (await get("/submissions", tkAdmin)).json.data[0]?.id;
 const ativoId = (await get("/assets/admin?perPage=1", tkAdmin)).json.data[0]?.id;
 const pedidoId = (await get("/orders?perPage=1", tkAdmin)).json.data[0]?.id;
+// Lido com o token do FORNECEDOR de proposito: o detalhe do proprio ativo so
+// existe para quem e dono dele, e resolver este id com o admin conferiria o
+// contrato contra uma rota que o fornecedor nao alcanca.
+const meuAtivoId = (await get("/me/my-assets?perPage=1", tkForn)).json.data[0]?.id;
 
 const resolver = (rota) =>
   rota === "__compra__" ? `/me/purchases/${compraId}`
@@ -123,6 +132,7 @@ const resolver = (rota) =>
   : rota === "__ativo__" ? `/assets/admin/${ativoId}`
   : rota === "__pedido__" ? `/orders/${pedidoId}`
   : rota === "__conclusao__" ? `/orders/${pedidoId}/completion`
+  : rota === "__meuAtivo__" ? `/me/my-assets/${meuAtivoId}`
   : rota;
 
 let faltas = 0, vazios = 0, okc = 0;

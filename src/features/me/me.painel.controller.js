@@ -31,6 +31,7 @@ const consulta = catchAsync(async (req, res) =>
 
 // ---- Vender
 const ativos = catchAsync(async (req, res) => lista(res, await painel.ativos(req.user.id, req.query)));
+const ativo = catchAsync(async (req, res) => ok(res, await painel.ativo(req.user.id, req.params.id)));
 const vendas = catchAsync(async (req, res) => lista(res, await painel.vendas(req.user.id, req.query)));
 const pagamentos = catchAsync(async (req, res) =>
   lista(res, await painel.pagamentos(req.user.id, req.query))
@@ -65,6 +66,7 @@ module.exports = {
   consultas,
   consulta,
   ativos,
+  ativo,
   vendas,
   pagamentos,
   perfil,

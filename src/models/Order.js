@@ -6,6 +6,7 @@ const {
   PAGAMENTOS,
   PAYMENT_STATUS,
   PICKUP_STATUS,
+  CANAIS_VENDA,
 } = require("../config/constants");
 
 module.exports = (sequelize) => {
@@ -38,6 +39,23 @@ module.exports = (sequelize) => {
         allowNull: false,
         defaultValue: PAGAMENTOS.PIX,
       },
+
+      /**
+       * Procedencia da venda (revisao do cliente, item 11).
+       *
+       * A RED fecha negocio por WhatsApp e por telefone. Essas vendas usam o
+       * MESMO pedido — mesmo estoque, mesmo repasse, mesma conclusao — e o que
+       * as distingue e este rotulo. Sem ele a gestao nao consegue responder
+       * quanto do faturamento veio do site.
+       */
+      channel: {
+        type: DataTypes.ENUM(...Object.values(CANAIS_VENDA)),
+        allowNull: false,
+        defaultValue: CANAIS_VENDA.SITE,
+      },
+
+      /** Quem da RED registrou a venda. Nulo quando veio do checkout do site. */
+      registeredById: { type: DataTypes.UUID },
 
       /**
        * Pagamento e retirada sao rastreados a parte do status do pedido: sao
@@ -94,6 +112,7 @@ module.exports = (sequelize) => {
 
   Order.associate = (models) => {
     Order.belongsTo(models.User, { as: "comprador", foreignKey: "buyerId" });
+    Order.belongsTo(models.User, { as: "registradoPor", foreignKey: "registeredById" });
     Order.hasMany(models.OrderItem, {
       as: "itens",
       foreignKey: "orderId",
