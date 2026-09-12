@@ -151,6 +151,11 @@ const env = {
     splitSupplier: {
       estoque: int(process.env.SPLIT_ESTOQUE_SUPPLIER, 50),
       catalogo: int(process.env.SPLIT_CATALOGO_SUPPLIER, 65),
+      // Ativo proprio da RED: nao ha terceiro a repassar. O zero e o valor
+      // correto do negocio, e nao um default a espera de configuracao — por
+      // isso a variavel existe so para quem operar um acervo proprio em
+      // parceria e precisar mudar.
+      proprio: int(process.env.SPLIT_PROPRIO_SUPPLIER, 0),
     },
   },
 };

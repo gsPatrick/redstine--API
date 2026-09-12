@@ -3,7 +3,7 @@
 const db = require("../../models");
 const { env } = require("../../config/env");
 const audit = require("../audit/audit.service");
-const { PRAZO_REPASSE_HORAS } = require("../../config/constants");
+const { PRAZO_REPASSE_HORAS, MODELOS_COMERCIAIS } = require("../../config/constants");
 
 /**
  * Configuracoes da plataforma.
@@ -16,6 +16,10 @@ const { PRAZO_REPASSE_HORAS } = require("../../config/constants");
  * percentual e copiado para o ativo e congelado no repasse no momento da venda
  * (secao 8 do documento). Esta funcao so muda o padrao dos proximos.
  */
+const CHAVE_DO_SPLIT = Object.fromEntries(
+  Object.values(MODELOS_COMERCIAIS).map((m) => [m, `split.${m}.fornecedor`])
+);
+
 const PADROES = {
   "split.estoque.fornecedor": {
     valor: () => env.business.splitSupplier.estoque,
@@ -24,6 +28,11 @@ const PADROES = {
   "split.catalogo.fornecedor": {
     valor: () => env.business.splitSupplier.catalogo,
     descricao: "Percentual do fornecedor no modelo RED Catálogo.",
+  },
+  "split.proprio.fornecedor": {
+    valor: () => env.business.splitSupplier.proprio,
+    descricao:
+      "Percentual do fornecedor no modelo Ativo Próprio RED. Zero por definição: o ativo é da RED e não há terceiro a repassar.",
   },
   "repasse.prazoHoras": {
     valor: () => PRAZO_REPASSE_HORAS,
@@ -104,11 +113,18 @@ async function gravar(entradas, { ator } = {}) {
   return todas();
 }
 
-/** Percentual do fornecedor para um modelo comercial, ja com fallback. */
+/**
+ * Percentual do fornecedor para um modelo comercial, ja com fallback.
+ *
+ * A chave e derivada do modelo em vez de escolhida num ternario: com dois
+ * modelos o ternario funcionava, com o terceiro ele mandava silenciosamente
+ * o ativo proprio para o percentual do catalogo — 65% para um fornecedor que
+ * nao existe. Modelo desconhecido cai no catalogo, que e o mais conservador
+ * para a RED (repassa mais, nunca retem a mais do que devia).
+ */
 async function percentualDoModelo(modelo) {
-  const chave =
-    modelo === "estoque" ? "split.estoque.fornecedor" : "split.catalogo.fornecedor";
-  const v = Number(await valor(chave));
+  const chave = CHAVE_DO_SPLIT[modelo];
+  const v = Number(await valor(chave || "split.catalogo.fornecedor"));
   return Number.isFinite(v) ? v : env.business.splitSupplier.catalogo;
 }
 

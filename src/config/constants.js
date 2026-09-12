@@ -118,12 +118,35 @@ const ASSET_TRANSICOES = {
   aguardando_aprovacao: ["aprovado", "em_avaliacao", "inativo"],
   aprovado: ["publicado", "em_avaliacao", "inativo"],
   publicado: ["vendido", "inativo"],
-  vendido: ["inativo"],
+  // Vendido volta a publicado: venda cancelada e marcacao por engano existem,
+  // e sem esta aresta o ativo ficava preso fora do catalogo para sempre — a
+  // unica saida era inativar e recadastrar, perdendo SKU, historico e fotos.
+  // A reposicao da quantidade e decidida no service, nao aqui: uma transicao
+  // nao sabe quanto do ativo foi de facto vendido.
+  vendido: ["publicado", "inativo"],
   inativo: [],
 };
 
-/** Modelo comercial: onde o ativo fica e como o resultado e dividido. */
-const MODELOS_COMERCIAIS = { ESTOQUE: "estoque", CATALOGO: "catalogo" };
+/**
+ * Modelo comercial: onde o ativo fica e como o resultado e dividido.
+ *
+ * PROPRIO e o acervo da propria RED — nao ha fornecedor terceiro, logo nao ha
+ * divisao: 100% do liquido e receita RED. Sem este modelo o ativo proprio era
+ * cadastrado como catalogo e a plataforma reservava 65% a um fornecedor que
+ * nao existe, inflando "a repassar" com dinheiro que ninguem ia receber.
+ */
+const MODELOS_COMERCIAIS = { ESTOQUE: "estoque", CATALOGO: "catalogo", PROPRIO: "proprio" };
+
+/**
+ * Rotulo de tela de cada modelo. Vive aqui porque tres telas diferentes
+ * mostram o mesmo nome, e um modelo novo sem rotulo aparecia como campo vazio
+ * na tabela — o bug so surgia na tela, nunca no teste do service.
+ */
+const ROTULO_MODELO_COMERCIAL = {
+  [MODELOS_COMERCIAIS.ESTOQUE]: "RED Estoque",
+  [MODELOS_COMERCIAIS.CATALOGO]: "RED Catálogo",
+  [MODELOS_COMERCIAIS.PROPRIO]: "Ativo Próprio RED",
+};
 
 /** Modalidade de venda. "consulta" nunca gera pedido direto — gera cotacao. */
 const MODALIDADES = { DIRETA: "direta", CONSULTA: "consulta" };
@@ -286,6 +309,7 @@ module.exports = {
   ASSET_STATUS,
   ASSET_TRANSICOES,
   MODELOS_COMERCIAIS,
+  ROTULO_MODELO_COMERCIAL,
   MODALIDADES,
   SUBMISSION_STATUS,
   ORDER_STATUS,

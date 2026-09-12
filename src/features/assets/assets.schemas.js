@@ -63,6 +63,9 @@ const criarSchema = z.object({
   color: z.string().max(80).optional(),
   size: z.string().max(80).optional(),
   quantity: z.coerce.number().int().min(0).optional(),
+  // Quantidade de partida do lote. Aceita-se explicitamente porque a
+  // curadoria por vezes cadastra um lote ja parcialmente consumido.
+  originalQuantity: z.coerce.number().int().min(0).optional(),
   unit: z.string().max(30).optional(),
   price: numeroOpcional,
   marketPrice: numeroOpcional,

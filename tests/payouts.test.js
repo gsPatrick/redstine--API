@@ -4,7 +4,10 @@ const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
 
 process.env.JWT_SECRET = process.env.JWT_SECRET || "x".repeat(48);
-const { percentualDoFornecedor } = require("../src/features/payouts/payouts.service");
+const {
+  percentualDoFornecedor,
+  calcular,
+} = require("../src/features/payouts/payouts.service");
 const { MODELOS_COMERCIAIS } = require("../src/config/constants");
 
 describe("repasse por modelo comercial", () => {
@@ -16,12 +19,33 @@ describe("repasse por modelo comercial", () => {
     assert.equal(percentualDoFornecedor(MODELOS_COMERCIAIS.CATALOGO), 65);
   });
 
+  test("Ativo Proprio nao repassa nada: o ativo e da RED", () => {
+    assert.equal(percentualDoFornecedor(MODELOS_COMERCIAIS.PROPRIO), 0);
+  });
+
+  test("o zero do ativo proprio e um percentual, nao a ausencia de um", () => {
+    // A regressao que isto tranca: um `||` no lugar do teste de `undefined`
+    // transformava os 0% do ativo proprio nos 65% do catalogo.
+    const r = calcular({ bruto: 1000, custos: 0, percentualFornecedor: percentualDoFornecedor(MODELOS_COMERCIAIS.PROPRIO) });
+    assert.equal(r.supplierAmount, 0);
+    assert.equal(r.redAmount, 1000);
+    assert.equal(r.redPercent, 100);
+  });
+
   test("modelo desconhecido cai no catalogo (o mais conservador para a RED)", () => {
     assert.equal(percentualDoFornecedor("inexistente"), 65);
   });
+
+  test("todo modelo do vocabulario tem percentual proprio declarado", () => {
+    // Sem isto, um modelo novo herdava silenciosamente os 65% do catalogo.
+    const esperado = { estoque: 50, catalogo: 65, proprio: 0 };
+    for (const m of Object.values(MODELOS_COMERCIAIS)) {
+      assert.equal(percentualDoFornecedor(m), esperado[m], m);
+    }
+  });
 });
 
-const { calcular, ratearCustos } = require("../src/features/payouts/payouts.service");
+const { ratearCustos } = require("../src/features/payouts/payouts.service");
 
 describe("regra financeira-mestre: split sobre o LIQUIDO", () => {
   test("o exemplo do documento oficial", () => {

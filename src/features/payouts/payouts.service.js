@@ -12,11 +12,25 @@ const {
   PRAZO_REPASSE_HORAS,
 } = require("../../config/constants");
 
-/** Percentual do fornecedor conforme o modelo comercial do ativo. */
+/**
+ * Percentual do fornecedor conforme o modelo comercial do ativo.
+ *
+ * Tabela indexada pelo modelo, nao ternario: o ativo PROPRIO da RED repassa
+ * 0% e um ternario de dois ramos o teria empurrado para os 65% do catalogo,
+ * criando repasse a um fornecedor inexistente. Modelo desconhecido continua a
+ * cair no catalogo — repassar a mais e o erro mais seguro dos dois.
+ */
+const PERCENTUAL_POR_MODELO = () => ({
+  [MODELOS_COMERCIAIS.ESTOQUE]: env.business.splitSupplier.estoque,
+  [MODELOS_COMERCIAIS.CATALOGO]: env.business.splitSupplier.catalogo,
+  [MODELOS_COMERCIAIS.PROPRIO]: env.business.splitSupplier.proprio,
+});
+
 function percentualDoFornecedor(modelo) {
-  return modelo === MODELOS_COMERCIAIS.ESTOQUE
-    ? env.business.splitSupplier.estoque
-    : env.business.splitSupplier.catalogo;
+  const pct = PERCENTUAL_POR_MODELO()[modelo];
+  // Comparacao explicita com undefined: 0% e um percentual valido, e `||`
+  // trocaria o repasse do ativo proprio pelos 65% do catalogo.
+  return pct === undefined ? env.business.splitSupplier.catalogo : pct;
 }
 
 const cent = (n) => Number(Number(n).toFixed(2));

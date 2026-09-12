@@ -12,6 +12,7 @@ const {
   PICKUP_STATUS,
   PAYOUT_STATUS,
   MODELOS_COMERCIAIS,
+  ROTULO_MODELO_COMERCIAL,
 } = require("../../config/constants");
 
 /**
@@ -28,10 +29,12 @@ const {
 
 const cent = (n) => Number(Number(n || 0).toFixed(2));
 
-const NOME_MODELO = {
-  [MODELOS_COMERCIAIS.ESTOQUE]: "RED Estoque",
-  [MODELOS_COMERCIAIS.CATALOGO]: "RED Catálogo",
-};
+/**
+ * Rotulo do modelo comercial. Reexportado do vocabulario em vez de redeclarado:
+ * tres arquivos da gestao importam este mapa daqui, e enquanto ele era uma
+ * copia local um modelo novo aparecia sem nome em todos eles.
+ */
+const NOME_MODELO = ROTULO_MODELO_COMERCIAL;
 
 const ROTULO_ASSET = {
   [ASSET_STATUS.RASCUNHO]: "Rascunho",
@@ -346,10 +349,14 @@ async function ativos(userId, query) {
     distinct: true,
   });
 
-  const pct = {
-    [MODELOS_COMERCIAIS.ESTOQUE]: await participacaoPara(MODELOS_COMERCIAIS.ESTOQUE),
-    [MODELOS_COMERCIAIS.CATALOGO]: await participacaoPara(MODELOS_COMERCIAIS.CATALOGO),
-  };
+  // Um percentual por modelo EXISTENTE, resolvido a partir do vocabulario:
+  // listar os modelos a mao deixava o modelo novo com `participacao`
+  // undefined, e a receita potencial da linha saia NaN na tela.
+  const pct = Object.fromEntries(
+    await Promise.all(
+      Object.values(MODELOS_COMERCIAIS).map(async (m) => [m, await participacaoPara(m)])
+    )
+  );
 
   const rows = r.rows.map((a) => {
     const participacao = pct[a.commercialModel];

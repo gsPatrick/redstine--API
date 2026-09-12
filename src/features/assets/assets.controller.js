@@ -11,7 +11,9 @@ const ehInterno = (user) =>
 /** Catalogo publico: sempre restrito a ativos publicados. */
 const listarPublico = catchAsync(async (req, res) => {
   const r = await service.listar(req.query, { somentePublicados: true });
-  paginated(res, r, { page: r.page, perPage: r.perPage });
+  // `filtros` viaja no meta, nao no data: e informacao sobre a lista (que
+  // opcoes ainda tem acervo), nao um item dela.
+  paginated(res, r, { page: r.page, perPage: r.perPage, filtros: r.filtros });
 });
 
 const destaques = catchAsync(async (req, res) => {

@@ -26,6 +26,7 @@ comerciais e fornecedores diferentes.
 |---|---|---|
 | RED Estoque | 50% | 50% |
 | RED Catálogo | 65% | 35% |
+| Ativo Próprio RED | 0% | 100% |
 
 ```js
 supplierAmount = round(bruto * percent / 100)
@@ -36,7 +37,8 @@ A parte da RED sai por **subtração**, não por um segundo arredondamento. Com 
 duas metades arredondadas em separado, R$ 0,01 dividido a 50% daria
 0,01 + 0,01 = 0,02 — um centavo criado do nada. Há teste unitário para isso.
 
-Os percentuais vêm de `SPLIT_ESTOQUE_SUPPLIER` e `SPLIT_CATALOGO_SUPPLIER`: são
+Os percentuais vêm de `SPLIT_ESTOQUE_SUPPLIER`, `SPLIT_CATALOGO_SUPPLIER` e
+`SPLIT_PROPRIO_SUPPLIER`: são
 condição comercial, mudam sem deploy. O percentual aplicado fica **gravado no
 registro**, então mudar a variável não reescreve o histórico.
 

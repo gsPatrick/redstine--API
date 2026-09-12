@@ -1,6 +1,6 @@
 "use strict";
 
-const { Op } = require("sequelize");
+const { Op, fn, col } = require("sequelize");
 const db = require("../../models");
 const { AppError } = require("../../utils/app-error");
 const { slugUnico } = require("../../utils/slug");
@@ -12,6 +12,7 @@ const { parsePagination } = require("../../utils/pagination");
 const {
   ASSET_STATUS,
   ASSET_TRANSICOES,
+  ORDER_STATUS,
   MODALIDADES,
   CAMPOS_TECNICOS,
   ROTULO_CONDICAO,
@@ -118,6 +119,60 @@ async function resolverCategoria(query) {
  */
 const apresentar = (asset, publico) => (publico ? paraCatalogo(asset) : comDesconto(asset));
 
+/**
+ * Valores que o painel de filtros deve oferecer.
+ *
+ * O cliente foi direto: "a marca do ativo sai do filtro quando o estoque do
+ * item for vendido, sinalizar zerado no estoque". Sao duas coisas distintas e
+ * ambas foram feitas — o ativo CONTINUA na vitrine, sinalizado como sem
+ * estoque (`inStock: false` e a linha "Estoque: Esgotado" na ficha), mas os
+ * valores dele NAO entram nas opcoes de filtro.
+ *
+ * A alternativa seria sumir com o ativo da lista. Foi recusada: o ativo
+ * esgotado ainda e prova de acervo, ainda recebe consulta e pode voltar ao
+ * estoque (um pedido cancelado devolve a quantidade), e a URL dele indexada
+ * passaria a dar 404 a cada esgotamento. O que engana o comprador nao e ver o
+ * ativo esgotado — e clicar num filtro "Tigre" que devolve zero resultado
+ * comprave.
+ *
+ * As contagens saem da MESMA consulta filtrada da listagem, so sem paginacao:
+ * assim o numero ao lado da opcao corresponde ao que o clique vai devolver, e
+ * nao ao acervo inteiro.
+ */
+const DIMENSOES_DE_FILTRO = [
+  ["brand", (a) => a.brand],
+  ["location", (a) => a.location],
+  ["condition", (a) => ROTULO_CONDICAO[a.condition] || a.condition],
+  ["saleFormat", (a) => ROTULO_FORMA_VENDA[a.saleFormat] || a.saleFormat],
+  ["availability", (a) => ROTULO_DISPONIBILIDADE[a.availability] || a.availability],
+  ["category", (a) => a["categoria.name"]],
+];
+
+async function filtrosDisponiveis(whereListagem) {
+  const linhas = await db.Asset.findAll({
+    // `quantity > 0` e a regra inteira do item: sem saldo, o valor do ativo
+    // deixa de ser uma opcao de filtro no mesmo instante.
+    where: { ...whereListagem, quantity: { [Op.gt]: 0 } },
+    attributes: ["brand", "location", "condition", "saleFormat", "availability"],
+    include: [{ model: db.Category, as: "categoria", attributes: ["name"] }],
+    raw: true,
+  });
+
+  const saida = {};
+  for (const [nome, extrair] of DIMENSOES_DE_FILTRO) {
+    const contagem = new Map();
+    for (const linha of linhas) {
+      const valor = extrair(linha);
+      if (valor === null || valor === undefined || String(valor).trim() === "") continue;
+      contagem.set(String(valor), (contagem.get(String(valor)) || 0) + 1);
+    }
+    saida[nome] = [...contagem.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], "pt-BR"))
+      .map(([value, count]) => ({ value, label: value, count }));
+  }
+  return saida;
+}
+
 async function listar(query, { somentePublicados = true } = {}) {
   const { page, perPage, limit, offset } = parsePagination(query);
   const where = montarFiltros(query, { somentePublicados });
@@ -153,6 +208,10 @@ async function listar(query, { somentePublicados = true } = {}) {
     count: resultado.count,
     page,
     perPage,
+    // So o catalogo publico monta painel de filtros. Na area interna a gestao
+    // precisa de alcancar tambem o que esta esgotado, e uma lista de opcoes
+    // que esconde o esgotado atrapalharia exatamente esse trabalho.
+    filtros: somentePublicados ? await filtrosDisponiveis(where) : undefined,
   };
 }
 
@@ -222,6 +281,11 @@ async function criar(dados, { atorId }) {
   // Nasce sempre em rascunho: ninguem cria ativo ja publicado, nem admin.
   const asset = await db.Asset.create({
     ...dados,
+    // Sem `originalQuantity` o model punha 1, e um lote cadastrado com 500
+    // unidades passava a ter "quantidade vendida" (original - disponivel)
+    // negativa no painel e nada para devolver ao estoque numa volta de
+    // vendido. Quem nao informa o original esta a cadastrar o lote inteiro.
+    originalQuantity: dados.originalQuantity ?? dados.quantity ?? undefined,
     slug,
     status: ASSET_STATUS.RASCUNHO,
     supplierId: dados.supplierId || atorId,
@@ -295,6 +359,69 @@ async function atualizar(id, dados, opcoes = {}) {
   return porId(asset.id);
 }
 
+/**
+ * Quantidade efetivamente vendida de um ativo.
+ *
+ * Soma os itens de pedidos que NAO foram cancelados. Pedido cancelado nao
+ * consumiu nada: a confirmacao baixou o estoque, o cancelamento desfez a
+ * venda, e contar essa quantidade como vendida manteria o ativo fora do
+ * catalogo por uma venda que deixou de existir.
+ */
+async function quantidadeVendida(assetId) {
+  const linha = await db.OrderItem.findOne({
+    where: { assetId },
+    attributes: [[fn("COALESCE", fn("SUM", col("OrderItem.quantity")), 0), "total"]],
+    include: [
+      {
+        model: db.Order,
+        as: "pedido",
+        attributes: [],
+        required: true,
+        where: { status: { [Op.ne]: ORDER_STATUS.CANCELADO } },
+      },
+    ],
+    raw: true,
+  });
+  return Number(linha?.total || 0);
+}
+
+/**
+ * Devolve ao estoque um ativo que voltou de VENDIDO para PUBLICADO.
+ *
+ * O cliente pediu a volta porque venda cancelada e marcacao por engano
+ * acontecem. Mas republicar com quantidade zero produziria um ativo visivel,
+ * clicavel e impossivel de comprar — pior do que o ativo preso.
+ *
+ * A reposicao NAO e arbitraria nem e a quantidade original: e
+ * `quantidade original - quantidade realmente vendida em pedidos vivos`.
+ * Assim os tres casos caem no lugar certo sem o operador ter de escolher:
+ *
+ *  - marcado vendido por engano, sem pedido nenhum -> volta tudo;
+ *  - venda cancelada -> volta o que o cancelamento libertou;
+ *  - venda real e viva -> da zero, e ai a transicao e RECUSADA, porque
+ *    republicar seria oferecer o que ja foi entregue. O operador corrige a
+ *    quantidade primeiro (recebeu mais pecas, por exemplo) e republica.
+ *
+ * Inventar quantidade aqui seria pior do que recusar: o comprador consegue
+ * fechar o pedido e a RED descobre no galpao que nao ha o que entregar.
+ */
+async function quantidadeParaDevolverAoEstoque(asset) {
+  if (Number(asset.quantity) > 0) return null;
+
+  const original = Number(asset.originalQuantity || 0);
+  const reposta = Math.max(0, original - (await quantidadeVendida(asset.id)));
+
+  if (reposta <= 0) {
+    throw AppError.unprocessable(
+      "Ativo sem quantidade a devolver ao estoque. Ajuste a quantidade antes de republicar.",
+      "NO_QUANTITY_TO_RESTORE",
+      { quantidadeOriginal: original, quantidadeDisponivel: Number(asset.quantity) }
+    );
+  }
+
+  return reposta;
+}
+
 /** Toda troca de status passa por aqui — nao existe update("status") solto. */
 async function mudarStatus(id, novoStatus, { motivo, ator } = {}) {
   const asset = await db.Asset.findByPk(id);
@@ -339,6 +466,15 @@ async function mudarStatus(id, novoStatus, { motivo, ator } = {}) {
       );
     }
     patch.publishedAt = new Date();
+  }
+
+  // Volta ao estoque: o carimbo de venda sai (o ativo nao esta vendido) e a
+  // quantidade e reposta pelo que sobrou de facto. Ambos antes do update para
+  // que a recusa por falta de quantidade aconteca sem gravar nada.
+  if (novoStatus === ASSET_STATUS.PUBLICADO && asset.status === ASSET_STATUS.VENDIDO) {
+    patch.soldAt = null;
+    const reposta = await quantidadeParaDevolverAoEstoque(asset);
+    if (reposta !== null) patch.quantity = reposta;
   }
 
   if (novoStatus === ASSET_STATUS.VENDIDO) patch.soldAt = new Date();

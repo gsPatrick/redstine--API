@@ -101,6 +101,10 @@ async function main() {
     { nome: "Lote de Tubos PVC Tigre", preco: 13.5, mercado: 27, qtd: 900, orig: 1000, forma: "lote", modelo: MODELOS_COMERCIAIS.CATALOGO, status: ASSET_STATUS.PUBLICADO, local: "Rio de Janeiro — RJ", condicao: "sem_uso" },
     { nome: "Conexões PVC Tigre", preco: 20.6, mercado: 37.5, qtd: 400, orig: 400, forma: "conjunto", modelo: MODELOS_COMERCIAIS.ESTOQUE, status: ASSET_STATUS.PUBLICADO, local: "Belo Horizonte — MG", condicao: "seminovo" },
     { nome: "Registros PVC", preco: 8, mercado: 14, qtd: 300, orig: 300, forma: "unidade", modelo: MODELOS_COMERCIAIS.CATALOGO, status: ASSET_STATUS.EM_AVALIACAO, local: "Salvador — BA", condicao: "usado_bom" },
+    // Um ativo no modelo PROPRIO: sem ele nenhuma tela da gestao mostrava a
+    // terceira linha do relatorio por modelo, e o 0%/100% so aparecia depois
+    // de alguem cadastrar acervo proprio a mao.
+    { nome: "Painéis Divisórios RED", preco: 150, mercado: 320, qtd: 12, orig: 12, forma: "unidade", modelo: MODELOS_COMERCIAIS.PROPRIO, status: ASSET_STATUS.PUBLICADO, local: "Pilares/RJ", condicao: "seminovo", daRed: true },
     { nome: "Luva Soldável 25mm", preco: 3.2, mercado: 5.8, qtd: 0, orig: 500, forma: "conjunto", modelo: MODELOS_COMERCIAIS.CATALOGO, status: ASSET_STATUS.INATIVO, local: "Curitiba — PR", condicao: "usado_sinais" },
   ];
 
@@ -112,7 +116,10 @@ async function main() {
     const sku = `RED-${String(451 - i).padStart(4, "0")}`;
     const existente = await db.Asset.findOne({ where: { sku } });
     const dados = {
-      supplierId: fornecedor.id,
+      // Ativo proprio nao tem fornecedor: e isso que o define. Deixa-lo com
+      // fornecedor mostraria na Area do Cliente dele um ativo a 0% que ele
+      // nao entenderia — e nao e dele.
+      supplierId: a.daRed ? null : fornecedor.id,
       categoryId: construcao.id,
       subcategoryId: sub?.id || null,
       name: a.nome,
@@ -129,7 +136,9 @@ async function main() {
       commercialModel: a.modelo,
       status: a.status,
       supplierApprovedAt: new Date(),
-      supplierApprovedBy: fornecedor.id,
+      // Quem autoriza o preco do ativo proprio e a propria RED: o carimbo
+      // nao pode ficar em nome de um fornecedor que nao participa.
+      supplierApprovedBy: a.daRed ? null : fornecedor.id,
       publishedAt: a.status === ASSET_STATUS.PUBLICADO ? new Date(Date.now() - i * 86400000 * 3) : null,
     };
 

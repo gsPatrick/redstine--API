@@ -173,10 +173,14 @@ async function ativos(query) {
     distinct: true,
   });
 
-  const pct = {
-    [MODELOS_COMERCIAIS.ESTOQUE]: await settings.percentualDoModelo(MODELOS_COMERCIAIS.ESTOQUE),
-    [MODELOS_COMERCIAIS.CATALOGO]: await settings.percentualDoModelo(MODELOS_COMERCIAIS.CATALOGO),
-  };
+  // Todos os modelos do vocabulario, nao os dois que existiam quando isto foi
+  // escrito: com a lista a mao, o ativo do modelo faltante vinha com
+  // `participacaoFornecedor` undefined e a coluna de potencial dava NaN.
+  const pct = Object.fromEntries(
+    await Promise.all(
+      Object.values(MODELOS_COMERCIAIS).map(async (m) => [m, await settings.percentualDoModelo(m)])
+    )
+  );
 
   const rows = r.rows.map((a) => {
     const participacao = pct[a.commercialModel];

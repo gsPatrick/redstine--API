@@ -19,11 +19,22 @@ describe("maquina de estados do ativo", () => {
     assert.ok(!ASSET_TRANSICOES.em_avaliacao.includes(ASSET_STATUS.PUBLICADO));
   });
 
-  test("publicado so vem de aprovado", () => {
+  test("publicado vem de aprovado ou da volta de vendido — de mais nenhum lugar", () => {
     const origens = Object.entries(ASSET_TRANSICOES)
       .filter(([, destinos]) => destinos.includes(ASSET_STATUS.PUBLICADO))
-      .map(([origem]) => origem);
-    assert.deepEqual(origens, [ASSET_STATUS.APROVADO]);
+      .map(([origem]) => origem)
+      .sort();
+    assert.deepEqual(origens, [ASSET_STATUS.APROVADO, ASSET_STATUS.VENDIDO].sort());
+  });
+
+  test("vendido volta ao estoque: sem isto o engano era irreversivel", () => {
+    assert.ok(ASSET_TRANSICOES.vendido.includes(ASSET_STATUS.PUBLICADO));
+  });
+
+  test("a volta nao salta a curadoria: vendido nao vai para rascunho nem avaliacao", () => {
+    for (const proibido of [ASSET_STATUS.RASCUNHO, ASSET_STATUS.EM_AVALIACAO, ASSET_STATUS.APROVADO]) {
+      assert.ok(!ASSET_TRANSICOES.vendido.includes(proibido), proibido);
+    }
   });
 
   test("inativo e terminal", () => {
@@ -37,6 +48,36 @@ describe("maquina de estados do ativo", () => {
         `status "${status}" sem transicoes declaradas`
       );
     }
+  });
+});
+
+/**
+ * A quantidade reposta na volta ao estoque.
+ *
+ * Replica a regra do service sem tocar no banco: o que importa provar e que
+ * ela nunca inventa saldo — nenhum caso pode devolver mais do que a
+ * quantidade original menos o que foi de facto vendido.
+ */
+describe("devolver ao estoque um ativo vendido", () => {
+  const reposta = (original, vendidaViva) => Math.max(0, Number(original || 0) - vendidaViva);
+
+  test("marcado vendido por engano, sem venda nenhuma: volta tudo", () => {
+    assert.equal(reposta(500, 0), 500);
+  });
+
+  test("venda cancelada nao conta: volta o que o cancelamento libertou", () => {
+    // 500 originais, 200 vendidos e cancelados (logo fora da conta) -> 500.
+    assert.equal(reposta(500, 0), 500);
+    // 500 originais, 200 vendidos e vivos -> volta so o restante.
+    assert.equal(reposta(500, 200), 300);
+  });
+
+  test("venda real e integral da zero — e zero tem de recusar a republicacao", () => {
+    assert.equal(reposta(500, 500), 0);
+  });
+
+  test("nunca devolve mais do que existiu, mesmo com venda maior que o original", () => {
+    assert.equal(reposta(100, 300), 0);
   });
 });
 

@@ -8,7 +8,7 @@ const {
   ASSET_STATUS,
   DISPONIBILIDADE,
   MODALIDADES,
-  MODELOS_COMERCIAIS,
+  ROTULO_MODELO_COMERCIAL,
 } = require("../../config/constants");
 
 /**
@@ -25,11 +25,6 @@ const {
  */
 
 const cent = (n) => (n === null || n === undefined ? 0 : Number(Number(n).toFixed(2)));
-
-const NOME_MODELO = {
-  [MODELOS_COMERCIAIS.ESTOQUE]: "RED Estoque",
-  [MODELOS_COMERCIAIS.CATALOGO]: "RED Catálogo",
-};
 
 const ROTULO_TECNICO = {
   modelo: "Modelo",
@@ -60,10 +55,14 @@ function ficha(asset) {
   add("Localização", asset.location);
   add("Forma de venda", ROTULO_FORMA_VENDA[asset.saleFormat]);
   add("Disponibilidade", ROTULO_DISPONIBILIDADE[asset.availability]);
+  // Estoque zerado e sinalizado, nao omitido: a ficha sem a linha de
+  // quantidade deixava o comprador a supor que havia saldo e a descobrir o
+  // contrario so no botao ausente.
   add(
     "Quantidade disponível",
     asset.quantity > 0 ? `${asset.quantity} ${asset.unit || "unidade"}` : null
   );
+  add("Estoque", Number(asset.quantity) > 0 ? null : "Esgotado");
   add("Marca", asset.brand);
   add("Material", asset.material);
   add("Cor", asset.color);
@@ -142,7 +141,7 @@ function paraCatalogo(asset) {
 
     saleFormatLabel: ROTULO_FORMA_VENDA[json.saleFormat] || null,
     availabilityLabel: ROTULO_DISPONIBILIDADE[json.availability] || null,
-    commercialModel: NOME_MODELO[json.commercialModel] || null,
+    commercialModel: ROTULO_MODELO_COMERCIAL[json.commercialModel] || null,
 
     // Sob consulta não tem preço fechado: o front troca o CTA por
     // "Consultar Condições" a partir daqui.

@@ -7,7 +7,10 @@
  *
  * Reexecute `npm run seed:demo` antes: as ações consomem o estado que testam.
  */
-const BASE = "http://localhost:4000/api/v1";
+// A porta sai do ambiente porque a 4000 nem sempre e a instancia a testar:
+// com uma segunda API a correr, conferir contra a porta ocupada testava o
+// codigo velho e dava tudo verde sem provar nada.
+const BASE = process.env.API_BASE || "http://localhost:4000/api/v1";
 const tok = async (e, s) => (await (await fetch(`${BASE}/auth/login`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({email:e,password:s})})).json()).data.token;
 async function chamar(m, r, tk, body) {
   const res = await fetch(BASE + r, { method: m, headers: { "Content-Type":"application/json", ...(tk?{Authorization:`Bearer ${tk}`}:{}) }, ...(body?{body:JSON.stringify(body)}:{}) });
@@ -183,6 +186,162 @@ if (criado.json?.data?.id) {
   ok("Ativo de terceiro ainda exige aprovação do fornecedor",
      bloqueado.json?.error?.code === "SUPPLIER_APPROVAL_REQUIRED", `(${bloqueado.status})`);
 }
+
+
+// ---------------------------------------------------------------------------
+// Volta ao estoque de um ativo vendido (revisão do cliente, item 3)
+// ---------------------------------------------------------------------------
+console.log("\n== VOLTA AO ESTOQUE ==");
+const catV = (await chamar("GET","/catalog/categories")).json.data[0];
+const publicar = async (dados) => {
+  const novo = (await chamar("POST","/assets",admin,dados)).json.data;
+  for (const st of ["em_avaliacao","aguardando_aprovacao","aprovado","publicado"]) {
+    await chamar("PATCH",`/assets/${novo.id}/status`,admin,{ status: st });
+  }
+  return novo;
+};
+
+const porEngano = await publicar({
+  name:`[smoke] vendido por engano ${Date.now()}`, categoryId:catV.id, price:70, saleMode:"direta", quantity:8,
+});
+ok("Ativo nasce com quantidade original igual à cadastrada", porEngano.originalQuantity === 8,
+   `(original ${porEngano.originalQuantity}, disponível ${porEngano.quantity})`);
+
+await chamar("PATCH",`/assets/${porEngano.id}/status`,admin,{ status:"vendido" });
+const volta = await chamar("PATCH",`/assets/${porEngano.id}/status`,admin,{ status:"publicado", motivo:"venda registrada por engano" });
+ok("Ativo vendido volta a publicado", volta.status===200 && volta.json?.data?.status==="publicado",
+   `(${volta.status} ${volta.json?.error?.code||""})`);
+
+const reposto = (await chamar("GET",`/assets/admin/${porEngano.id}`,admin)).json.data;
+// Sem repor a quantidade o ativo voltava publicado e inconsumivel: aparecia
+// na vitrine e nenhum pedido podia ser fechado.
+ok("A volta repõe a quantidade disponível", reposto.quantity === 8, `(${reposto.quantity})`);
+ok("A volta apaga o carimbo de venda", !reposto.soldAt, `(${reposto.soldAt})`);
+const noCatalogoDeNovo = (await chamar("GET",`/assets/slug/${reposto.slug}`)).json?.data;
+ok("O ativo devolvido é comprável outra vez", noCatalogoDeNovo?.inStock === true);
+
+// E o caso que NAO pode voltar: a venda aconteceu de verdade, pelo pedido, e
+// consumiu o lote inteiro. Republicar seria oferecer o que ja foi entregue.
+const vendaReal = async (qtd) => {
+  const ativo = await publicar({
+    name:`[smoke] venda real ${Date.now()}`, categoryId:catV.id, price:50, saleMode:"direta", quantity:qtd,
+  });
+  const compradorDemo = (await chamar("GET","/users?role=comprador&perPage=1",admin)).json.data[0];
+  const ped = await chamar("POST","/orders",admin,{
+    buyerName: compradorDemo?.nome || "[smoke] comprador",
+    buyerEmail: compradorDemo?.email || "ana.lima@construtoraalfa.com.br",
+    paymentMethod:"pix", items:[{ assetId: ativo.id, quantity: qtd }],
+  });
+  await chamar("POST",`/orders/${ped.json?.data?.id}/confirm`,admin);
+  return { ativo, pedidoId: ped.json?.data?.id };
+};
+
+const integral = await vendaReal(1);
+const aposVenda = (await chamar("GET",`/assets/admin/${integral.ativo.id}`,admin)).json.data;
+ok("Venda integral pelo pedido marca o ativo como vendido", aposVenda.status==="vendido" && aposVenda.quantity===0,
+   `(${aposVenda.status}, ${aposVenda.quantity})`);
+
+const semSaldo = await chamar("PATCH",`/assets/${integral.ativo.id}/status`,admin,{ status:"publicado" });
+ok("Sem quantidade a devolver, a volta é recusada em vez de publicar o inconsumível",
+   semSaldo.json?.error?.code === "NO_QUANTITY_TO_RESTORE", `(${semSaldo.status} ${semSaldo.json?.error?.code})`);
+
+// Venda cancelada e o caso que o cliente descreveu: cancelar o pedido nao
+// devolve a quantidade sozinho, e a volta ao estoque passa a ser possivel
+// porque o item cancelado deixa de contar como vendido.
+const cancelada = await vendaReal(2);
+await chamar("PATCH",`/orders/${cancelada.pedidoId}/status`,admin,{ status:"cancelado", motivo:"[smoke] desistência" });
+const voltaCancelada = await chamar("PATCH",`/assets/${cancelada.ativo.id}/status`,admin,{ status:"publicado", motivo:"venda cancelada" });
+const reabilitado = (await chamar("GET",`/assets/admin/${cancelada.ativo.id}`,admin)).json.data;
+ok("Venda cancelada permite devolver o ativo ao estoque",
+   voltaCancelada.status===200 && reabilitado.status==="publicado" && reabilitado.quantity===2,
+   `(${voltaCancelada.status}, ${reabilitado.status}, ${reabilitado.quantity})`);
+
+// ---------------------------------------------------------------------------
+// Estoque zerado sai do filtro do catálogo (revisão do cliente, item 2)
+// ---------------------------------------------------------------------------
+console.log("\n== FILTRO DO CATÁLOGO E ESTOQUE ZERADO ==");
+const marca = `SmokeMarca${Date.now()}`;
+const comMarca = await publicar({
+  name:`[smoke] com marca ${Date.now()}`, categoryId:catV.id, price:90, saleMode:"direta", quantity:4, brand: marca,
+});
+
+const marcas = () => chamar("GET","/assets?perPage=1").then(r => (r.json?.meta?.filtros?.brand||[]).map(o=>o.value));
+ok("O catálogo devolve o painel de filtros no meta", (await marcas()).length > 0);
+ok("Marca com estoque aparece no filtro", (await marcas()).includes(marca));
+
+await chamar("PATCH",`/assets/${comMarca.id}`,admin,{ quantity:0 });
+const depoisDeZerar = await marcas();
+ok("Marca sai do filtro quando o estoque zera", !depoisDeZerar.includes(marca),
+   `(${depoisDeZerar.filter(m=>m.startsWith("SmokeMarca")).join(",")||"nenhuma"})`);
+
+const zerado = (await chamar("GET",`/assets/slug/${comMarca.slug}`)).json?.data;
+// A outra metade do pedido: sai do FILTRO, mas continua na vitrine sinalizado.
+ok("O ativo continua no catálogo, sinalizado como esgotado",
+   Boolean(zerado) && zerado.inStock === false &&
+   (zerado.attributes||[]).some(l => l.name==="Estoque" && l.values.includes("Esgotado")),
+   JSON.stringify(zerado?.inStock));
+const naLista = (await chamar("GET",`/assets?search=${encodeURIComponent(comMarca.name)}`)).json?.data||[];
+ok("Esgotado não desaparece da listagem pública", naLista.some(a=>a.id===comMarca.id));
+
+// ---------------------------------------------------------------------------
+// Modelo comercial Ativo Próprio (revisão do cliente, item 10)
+// ---------------------------------------------------------------------------
+console.log("\n== ATIVO PRÓPRIO (100% RED) ==");
+const proprio = await publicar({
+  name:`[smoke] ativo proprio ${Date.now()}`, categoryId:catV.id, price:200, saleMode:"direta",
+  quantity:3, commercialModel:"proprio",
+});
+ok("Cadastrar ativo no modelo próprio", proprio.commercialModel === "proprio", `(${proprio.commercialModel})`);
+
+const listaProprio = (await chamar("GET","/management/assets?commercialModel=proprio",admin)).json.data;
+const linhaProprio = listaProprio.find(a=>a.id===proprio.id);
+ok("Gestão filtra pelo modelo próprio", Boolean(linhaProprio));
+ok("Ativo próprio não reserva nada ao fornecedor",
+   linhaProprio?.participacaoFornecedor === 0 && linhaProprio?.potencialFornecedor === 0,
+   `(${linhaProprio?.participacaoFornecedor}% / ${linhaProprio?.potencialFornecedor})`);
+ok("Todo o potencial do ativo próprio é da RED",
+   linhaProprio?.participacaoRed === 100 && linhaProprio?.potencialRed === 600,
+   `(${linhaProprio?.participacaoRed}% / ${linhaProprio?.potencialRed})`);
+ok("O modelo próprio tem rótulo de tela", linhaProprio?.modelo === "Ativo Próprio RED", `(${linhaProprio?.modelo})`);
+
+// Uma venda no modelo proprio: o repasse nasce a zero para o fornecedor e a
+// RED fica com o liquido inteiro.
+const compradorUser = (await chamar("GET","/users?role=comprador&perPage=1",admin)).json.data[0];
+const pedidoProprio = await chamar("POST","/orders",admin,{
+  buyerName: compradorUser?.nome || "[smoke] comprador",
+  buyerEmail: compradorUser?.email || "ana.lima@construtoraalfa.com.br",
+  paymentMethod:"pix",
+  items:[{ assetId: proprio.id, quantity: 1 }],
+});
+if (pedidoProprio.json?.data?.id) {
+  const pid = pedidoProprio.json.data.id;
+  await chamar("POST",`/orders/${pid}/confirm`,admin);
+  const detalhe = (await chamar("GET",`/orders/${pid}`,admin)).json.data;
+  const rep = (detalhe.repasses||[])[0];
+  ok("Venda de ativo próprio gera repasse 0/100",
+     Number(rep?.supplierPercent)===0 && Number(rep?.redPercent)===100 && Number(rep?.supplierAmount)===0,
+     JSON.stringify({s:rep?.supplierPercent,r:rep?.redPercent,va:rep?.supplierAmount}));
+  ok("A receita RED do ativo próprio é o líquido inteiro",
+     Number(rep?.redAmount) === Number(rep?.netAmount), `(${rep?.redAmount} de ${rep?.netAmount})`);
+
+  // A regra que NAO pode quebrar: mudar a tabela de percentuais nunca mexe no
+  // que ja foi vendido, porque o percentual do repasse e um snapshot.
+  const antesRel = (await chamar("GET","/management/reports/by-model?periodo=tudo",admin)).json.data;
+  await chamar("PATCH","/management/settings",admin,{ "split.proprio.fornecedor": 40 });
+  const depoisRel = (await chamar("GET","/management/reports/by-model?periodo=tudo",admin)).json.data;
+  ok("Mudar o percentual do modelo próprio NÃO recalcula a venda já realizada",
+     JSON.stringify(antesRel) === JSON.stringify(depoisRel));
+  const relProprio = depoisRel.find(l=>l.modeloChave==="proprio");
+  ok("O relatório por modelo mostra o modelo próprio com o percentual praticado",
+     relProprio?.participacaoFornecedor === 0 && relProprio?.modelo === "Ativo Próprio RED",
+     JSON.stringify(relProprio||{}).slice(0,140));
+  await chamar("PATCH","/management/settings",admin,{ "split.proprio.fornecedor": 0 });
+} else {
+  ok("Criar pedido de ativo próprio", false, JSON.stringify(pedidoProprio.json).slice(0,160));
+}
+
+const cfgs = (await chamar("GET","/management/settings",admin)).json.data.map(c=>c.key);
+ok("Configurações expõem o percentual do modelo próprio", cfgs.includes("split.proprio.fornecedor"));
 
 // Aprovacao do fornecedor e ciclo do pedido
 console.log("\n== APROVAÇÃO DO FORNECEDOR ==");

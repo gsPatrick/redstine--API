@@ -17,7 +17,7 @@ O ativo é a entidade central. Leia
 
 `page` · `perPage` (máx 100) · `search` · `category` · `subcategory` ·
 `condition` (`sem_uso`\|`seminovo`\|`usado`) · `saleMode` (`direta`\|`consulta`) ·
-`commercialModel` (`estoque`\|`catalogo`) · `location` · `brand` · `featured` ·
+`commercialModel` (`estoque`\|`catalogo`\|`proprio`) · `location` · `brand` · `featured` ·
 `minPrice` · `maxPrice` · `sort` (`recentes`\|`preco_asc`\|`preco_desc`\|`nome`)
 
 ```
@@ -33,11 +33,32 @@ GET /api/v1/assets?category=red-mobiliario&condition=seminovo&sort=preco_asc
     "categoria": { "slug": "red-mobiliario", "name": "RED Mobiliário" },
     "imagens": [{ "url": "...", "position": 0 }]
   }],
-  "meta": { "page": 1, "perPage": 20, "total": 9, "totalPages": 1 }
+  "meta": {
+    "page": 1, "perPage": 20, "total": 9, "totalPages": 1,
+    "filtros": {
+      "brand": [{ "value": "Portinari", "label": "Portinari", "count": 2 }],
+      "location": [], "condition": [], "saleFormat": [], "availability": [], "category": []
+    }
+  }
 }
 ```
 
 `discountPercent` vem calculado pela API. É `null` quando não há `marketPrice`.
+
+### `meta.filtros` — o painel de filtros
+
+Só o catálogo público devolve `filtros` (a área interna precisa de alcançar
+também o que está esgotado). São as opções que **ainda têm acervo**: só entra
+valor de ativo com `quantity > 0`. Quando o estoque de um ativo zera, a marca
+dele sai do filtro no mesmo instante.
+
+O ativo esgotado **continua na listagem**, sinalizado: `inStock: false` e a
+linha `"Estoque": "Esgotado"` em `attributes`. Sumir com ele daria 404 numa URL
+indexada a cada esgotamento; o que engana o comprador é um filtro que devolve
+zero resultado.
+
+As contagens saem da mesma consulta filtrada da listagem, sem paginação — o
+número ao lado da opção é o que o clique devolve.
 
 ## Interno — `admin` ou `curador`
 

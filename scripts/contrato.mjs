@@ -8,7 +8,10 @@
  * Exige `npm run seed:demo` antes: lista vazia esconde campo em falta, e
  * conferir contra array vazio é passar por omissão.
  */
-const BASE = "http://localhost:4000/api/v1";
+// A porta sai do ambiente porque a 4000 nem sempre e a instancia a testar:
+// com uma segunda API a correr, conferir contra a porta ocupada testava o
+// codigo velho e dava tudo verde sem provar nada.
+const BASE = process.env.API_BASE || "http://localhost:4000/api/v1";
 
 async function token(email, senha) {
   const r = await fetch(`${BASE}/auth/login`, {
@@ -54,6 +57,11 @@ const CONTRATO = [
   ["Conta / dados", "/me/profile", (d) => d.dados, ["nome","sobrenome","email","telefone","cpf"]],
   ["Conta / empresa", "/me/profile", (d) => d.empresa, ["razaoSocial","nomeFantasia","cnpj","cargo","email"]],
   ["Conta / endereços", "/me/profile", (d) => d.enderecos?.retirada, ["cep","logradouro","numero","complemento","bairro","cidade","estado"]],
+  // O painel de filtros do catalogo vive no `meta`: e informacao sobre a
+  // lista (que opcoes ainda tem acervo), nao um item dela.
+  ["Comprar / painel de filtros", "/assets?perPage=1", (d, meta) => meta.filtros, ["brand","location","condition","saleFormat","availability","category"]],
+  ["Comprar / opção de filtro", "/assets?perPage=1", (d, meta) => meta.filtros?.location?.[0], ["value","label","count"]],
+  ["Comprar / card", "/assets?perPage=1", (d) => primeira(d), ["id","slug","name","price","regularPrice","onSale","images","categories","condition","brand","location","quantity","unit","inStock","attributes","commercialModel"]],
   ["Enviar Ativos / categorias", "/catalog/categories", (d) => primeira(d), ["id","name","subcategorias"]],
 ];
 

@@ -47,6 +47,7 @@ Gerar: `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 |---|---|---|---|
 | `SPLIT_ESTOQUE_SUPPLIER` | não | `50` | % ao fornecedor no modelo RED Estoque |
 | `SPLIT_CATALOGO_SUPPLIER` | não | `65` | % ao fornecedor no modelo RED Catálogo |
+| `SPLIT_PROPRIO_SUPPLIER` | não | `0` | % ao fornecedor no modelo Ativo Próprio RED — o ativo é da RED, não há terceiro a repassar |
 
 Estão em ambiente porque são condição comercial, não constante técnica — mudam
 sem deploy de código.

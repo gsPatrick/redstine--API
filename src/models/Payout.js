@@ -1,7 +1,7 @@
 "use strict";
 
 const { DataTypes } = require("sequelize");
-const { PAYOUT_STATUS } = require("../config/constants");
+const { PAYOUT_STATUS, MODELOS_COMERCIAIS } = require("../config/constants");
 
 module.exports = (sequelize) => {
   /**
@@ -9,7 +9,7 @@ module.exports = (sequelize) => {
    *
    * E aqui que o modelo comercial deixa de ser texto e vira numero: na
    * confirmacao do pedido cada item gera um Payout com o percentual do seu
-   * modelo (RED Estoque 50/50, RED Catalogo 65/35).
+   * modelo (RED Estoque 50/50, RED Catalogo 65/35, Ativo Proprio 0/100).
    *
    * O repasse nasce em VENDA_REALIZADA. So passa a A_RECEBER depois da
    * conclusao integral da operacao — antes disso o valor existe como venda,
@@ -24,7 +24,10 @@ module.exports = (sequelize) => {
       assetId: { type: DataTypes.UUID },
       supplierId: { type: DataTypes.UUID },
 
-      commercialModel: { type: DataTypes.ENUM("estoque", "catalogo"), allowNull: false },
+      commercialModel: {
+        type: DataTypes.ENUM(...Object.values(MODELOS_COMERCIAIS)),
+        allowNull: false,
+      },
       supplierPercent: { type: DataTypes.INTEGER, allowNull: false },
       redPercent: { type: DataTypes.INTEGER, allowNull: false },
 

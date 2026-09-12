@@ -2,6 +2,7 @@
 
 const { enviar } = require("./mailer.client");
 const { env } = require("../../config/env");
+const { ROTULO_MODELO_COMERCIAL } = require("../../config/constants");
 
 const linkSite = (caminho) => `${env.app.siteUrl}${caminho}`;
 
@@ -34,7 +35,7 @@ const ativoAguardandoAprovacao = (asset, fornecedor) =>
       `O ativo "${asset.name}" passou pela curadoria RED.`,
       "",
       `Preco proposto:  R$ ${asset.price}`,
-      `Modelo comercial: RED ${asset.commercialModel === "estoque" ? "Estoque" : "Catalogo"}`,
+      `Modelo comercial: ${ROTULO_MODELO_COMERCIAL[asset.commercialModel] || asset.commercialModel}`,
       "",
       "Nenhum ativo e comercializado por preco nao autorizado — por isso",
       "precisamos da sua aprovacao antes de publicar no catalogo.",

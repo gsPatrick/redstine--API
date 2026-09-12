@@ -80,9 +80,16 @@ uma categoria só.
 
 ```
 rascunho ──► em_avaliacao ──► aguardando_aprovacao ──► aprovado ──► publicado ──► vendido
-    │              │                    │                  │            │            │
+    │              │                    │                  │            │ ◄──────────┘
     └──────────────┴────────────────────┴──────────────────┴────────────┴───► inativo
 ```
+
+`vendido ──► publicado` é a **volta ao estoque**: venda cancelada e marcação
+por engano acontecem, e sem essa aresta o ativo ficava preso fora do catálogo.
+A quantidade é reposta como `quantidade original − quantidade vendida em
+pedidos não cancelados`. Se isso der zero, a transição é recusada com
+`422 NO_QUANTITY_TO_RESTORE` — um ativo publicado com estoque zero é visível e
+impossível de comprar.
 
 Transições permitidas em `src/config/constants.js` → `ASSET_TRANSICOES`.
 Qualquer salto fora do mapa devolve `422 INVALID_TRANSITION` com os destinos
@@ -94,9 +101,12 @@ válidos em `details`.
 |---|---|---|---|
 | `estoque` | estoque da RED | 50% | 50% |
 | `catalogo` | com o fornecedor | 65% | 35% |
+| `proprio` | acervo da própria RED | 0% | 100% |
 
-Percentuais em `SPLIT_ESTOQUE_SUPPLIER` e `SPLIT_CATALOGO_SUPPLIER` — são
-condição comercial, mudam sem deploy.
+Percentuais em `SPLIT_ESTOQUE_SUPPLIER`, `SPLIT_CATALOGO_SUPPLIER` e
+`SPLIT_PROPRIO_SUPPLIER` — são condição comercial, mudam sem deploy. Mudar
+qualquer um deles **não** recalcula venda já realizada: o percentual é copiado
+para o repasse na confirmação do pedido e fica congelado lá.
 
 ## Papéis
 
