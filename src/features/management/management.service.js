@@ -11,6 +11,7 @@ const {
   PAYOUT_STATUS,
   EVENTOS,
   PRAZO_REPASSE_HORAS,
+  CAPABILITIES,
 } = require("../../config/constants");
 
 /**
@@ -62,43 +63,124 @@ const VENDAS = Object.values(ORDER_STATUS).filter(
 
 // ---------------------------------------------------------------- Visao geral
 
-async function visaoGeral(query) {
+/**
+ * Visao Geral — saude global, NAO uma quarta area.
+ *
+ * O cliente foi explicito: "escolhe 2 ou 3 KPIs criticos de cada area e
+ * apresenta a saude global". Entao esta funcao devolve tres blocos pequenos
+ * (comercial, operacao, financeiro), e nao a uniao de tudo o que cada area
+ * sabe — a versao anterior somava seis indicadores de duas areas e ainda assim
+ * nao respondia "como esta o negocio".
+ *
+ * E cada bloco so vem se o utilizador tiver a capacidade da area.
+ *
+ * Isto e correcao, nao politica nova: antes a rota exigia apenas
+ * `commercial_read` e devolvia `financeiro.receitaRed` e `aRepassar` dentro do
+ * mesmo payload — ou seja, o perfil Comercial lia receita da RED e repasse
+ * pela Visao Geral, exatamente o que a regra de negocio proibe e o que o teste
+ * da area financeira protegia nas outras rotas. O bloqueio por rota nao servia
+ * aqui porque o problema era o CONTEUDO de uma rota que tres areas partilham.
+ */
+async function visaoGeral(query, capacidades = []) {
   const periodo = janela(query);
-  const relatorios = require("./management.relatorios");
+  const pode = (c) => capacidades.includes(c);
 
-  const [estado, fluxo, financeiro, anterior, evolucao, categorias] = await Promise.all([
-    indicadoresDeEstado(),
-    indicadoresDeFluxo(periodo),
-    payoutsService.resumoDaPlataforma(),
-    // O periodo imediatamente anterior, do mesmo tamanho: e a unica base
-    // honesta para "+22% vs período anterior". Comparar com um intervalo de
-    // duracao diferente inventaria a variacao.
-    indicadoresDeFluxo(periodoAnterior(periodo)),
-    relatorios.evolucaoDeVendas({ periodo: "12m" }),
-    relatorios.vendasPorCategoria(query),
-  ]);
-
-  return {
+  const resposta = {
     periodo: { desde: periodo.desde, ate: periodo.ate },
-    // Fotografia do agora — deliberadamente fora do filtro.
-    estado,
-    // Movimento do intervalo.
-    fluxo,
-    financeiro: {
-      receitaRed: financeiro.receitaRed,
-      aRepassar: financeiro.aRepassar,
-      repassado: financeiro.repassado,
-    },
-    variacoes: {
-      vendasRealizadas: variacao(fluxo.vendasRealizadas, anterior.vendasRealizadas),
-      valorVendido: variacao(fluxo.valorVendido, anterior.valorVendido),
-      consultasRecebidas: variacao(fluxo.consultasRecebidas, anterior.consultasRecebidas),
-      enviosRecebidos: variacao(fluxo.enviosRecebidos, anterior.enviosRecebidos),
-      operacoesConcluidas: variacao(fluxo.operacoesConcluidas, anterior.operacoesConcluidas),
-    },
-    graficos: { evolucaoVendas: evolucao, vendasPorCategoria: categorias },
-    alertas: await alertas(),
+    // A tela precisa saber que blocos existem nesta sessao para nao renderizar
+    // um titulo de area sem cartoes debaixo.
+    areas: [],
   };
+
+  // Repasses fora do prazo e numero financeiro. Fica numa variavel propria
+  // porque dois blocos o querem e a capacidade que o libera e uma so.
+  let repassesForaDoPrazo = null;
+  if (pode(CAPABILITIES.FINANCIAL_READ)) {
+    const [fin, vencidos] = await Promise.all([
+      payoutsService.resumoDaPlataforma(),
+      db.Payout.count({
+        where: {
+          status: [PAYOUT_STATUS.A_RECEBER, PAYOUT_STATUS.PAGAMENTO_PROGRAMADO],
+          dueAt: { [Op.lt]: new Date() },
+        },
+      }),
+    ]);
+    repassesForaDoPrazo = vencidos;
+
+    resposta.areas.push("financeiro");
+    resposta.financeiro = {
+      receitaRed: fin.receitaRed,
+      aRepassar: fin.aRepassar,
+      repassado: fin.repassado,
+      repassesForaDoPrazo: vencidos,
+      prazoRepasseHoras: PRAZO_REPASSE_HORAS,
+    };
+  }
+
+  if (pode(CAPABILITIES.COMMERCIAL_READ)) {
+    const relatorios = require("./management.relatorios");
+    const [fluxo, anterior, pendentes, estado, evolucao] = await Promise.all([
+      indicadoresDeFluxo(periodo),
+      // O periodo imediatamente anterior, do mesmo tamanho: e a unica base
+      // honesta para "+22% vs período anterior".
+      indicadoresDeFluxo(periodoAnterior(periodo)),
+      alertasComerciais(),
+      indicadoresDeEstado(),
+      relatorios.evolucaoDeVendas(
+        { periodo: "12m" },
+        { comFinanceiro: pode(CAPABILITIES.FINANCIAL_READ) }
+      ),
+    ]);
+
+    resposta.areas.unshift("comercial");
+    resposta.comercial = {
+      // FLUXO — responde ao filtro.
+      valorVendido: fluxo.valorVendido,
+      vendasRealizadas: fluxo.vendasRealizadas,
+      ticketMedio: fluxo.ticketMedio,
+      // ESTADO — o que esta parado a espera de alguem.
+      consultasEmAberto: pendentes.consultasEmAberto,
+      ativosAguardandoAprovacao: pendentes.ativosAguardandoAprovacao,
+      enviosSemAvaliacao: pendentes.enviosSemAvaliacao,
+      variacoes: {
+        valorVendido: variacao(fluxo.valorVendido, anterior.valorVendido),
+        vendasRealizadas: variacao(fluxo.vendasRealizadas, anterior.vendasRealizadas),
+      },
+    };
+    resposta.graficos = { evolucaoVendas: evolucao };
+
+    // `estado`, `fluxo` e `alertas` continuam no payload porque as telas de
+    // Comercial (Ativos, Vendas) leem daqui os proprios cartoes. A Visao Geral
+    // deixou de os mostrar; a rota nao deixou de os servir.
+    resposta.estado = estado;
+    resposta.fluxo = fluxo;
+    resposta.alertas = {
+      ...pendentes,
+      ...(repassesForaDoPrazo === null ? {} : { repassesForaDoPrazo }),
+      prazoRepasseHoras: PRAZO_REPASSE_HORAS,
+    };
+  }
+
+  if (pode(CAPABILITIES.OPERATION_READ)) {
+    const operacao = require("./management.operacao");
+    // Sem filtro: o inventario e ESTADO, e a Visao Geral pergunta "quanto ha
+    // agora", nao "quanto entrou no periodo".
+    const ind = await operacao.indicadores({});
+
+    // Depois do comercial e antes do financeiro — a ordem das areas no menu.
+    const posicao = resposta.areas.indexOf("financeiro");
+    resposta.areas.splice(posicao === -1 ? resposta.areas.length : posicao, 0, "operacao");
+    resposta.operacao = {
+      ativosSobGestao: ind.inventario.registros,
+      unidadesSobGestao: ind.inventario.unidades,
+      valorDoInventario: ind.inventario.valor,
+      aguardandoRetirada: ind.aguardandoRetirada.itens,
+      valorAguardandoRetirada: ind.aguardandoRetirada.valor,
+      pendenciasOperacionais: ind.pendencias.total,
+    };
+  }
+
+  return resposta;
 }
 
 /** Intervalo imediatamente anterior, com a mesma duracao. */
@@ -197,30 +279,26 @@ async function indicadoresDeFluxo(periodo) {
   };
 }
 
-/** O que exige acao humana hoje. Nada aqui e filtravel por periodo. */
-async function alertas() {
-  const agora = new Date();
-
-  const [curadoriaParada, aprovacaoPendente, consultasSemResposta, repassesVencidos] =
-    await Promise.all([
-      db.Submission.count({ where: { status: SUBMISSION_STATUS.RECEBIDA } }),
-      db.Asset.count({ where: { status: ASSET_STATUS.AGUARDANDO_APROVACAO } }),
-      db.Quote.count({ where: { status: [QUOTE_STATUS.NOVA, QUOTE_STATUS.EM_ATENDIMENTO] } }),
-      db.Payout.count({
-        where: {
-          status: [PAYOUT_STATUS.A_RECEBER, PAYOUT_STATUS.PAGAMENTO_PROGRAMADO],
-          dueAt: { [Op.lt]: agora },
-        },
-      }),
-    ]);
+/**
+ * O que exige acao humana hoje, do lado COMERCIAL. Nada aqui e filtravel por
+ * periodo.
+ *
+ * `repassesForaDoPrazo` saiu daqui: e numero financeiro, e devolve-lo junto com
+ * os comerciais obrigava a rota a escolher entre vazar o dado ou recusar o
+ * perfil comercial inteiro. Quem o quer soma-o de fora, atras da capacidade
+ * financeira.
+ */
+async function alertasComerciais() {
+  const [curadoriaParada, aprovacaoPendente, consultasSemResposta] = await Promise.all([
+    db.Submission.count({ where: { status: SUBMISSION_STATUS.RECEBIDA } }),
+    db.Asset.count({ where: { status: ASSET_STATUS.AGUARDANDO_APROVACAO } }),
+    db.Quote.count({ where: { status: [QUOTE_STATUS.NOVA, QUOTE_STATUS.EM_ATENDIMENTO] } }),
+  ]);
 
   return {
     enviosSemAvaliacao: curadoriaParada,
     ativosAguardandoAprovacao: aprovacaoPendente,
     consultasEmAberto: consultasSemResposta,
-    // O prazo e regra de negocio (48h apos a conclusao), nao meta interna.
-    repassesForaDoPrazo: repassesVencidos,
-    prazoRepasseHoras: PRAZO_REPASSE_HORAS,
   };
 }
 

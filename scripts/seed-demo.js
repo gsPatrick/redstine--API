@@ -15,6 +15,7 @@
 process.env.JWT_SECRET = process.env.JWT_SECRET || "x".repeat(48);
 
 const bcrypt = require("bcryptjs");
+const { Op } = require("sequelize");
 const db = require("../src/models");
 const { gerarReferencia } = require("../src/utils/reference");
 const { slugUnico } = require("../src/utils/slug");
@@ -72,6 +73,19 @@ async function main() {
     companyTradeName: "Construtora Alfa",
   });
 
+  /**
+   * Utilizadores internos, um por area.
+   *
+   * Existem para a separacao de acesso ser TESTADA, e nao apenas descrita: sem
+   * um login de cada perfil, `check:acoes` so conseguia provar que fornecedor
+   * e comprador nao entram na gestao — e a pergunta que a regra de negocio faz
+   * e outra: o perfil Operacao alcanca o financeiro? O Comercial alcanca a
+   * Operacao? Sem estes tres logins, essas duas respostas nunca eram medidas.
+   */
+  await utilizador("comercial@redestine.com.br", { name: "Maria", lastName: "Santos", role: "comercial" });
+  await utilizador("operacao@redestine.com.br", { name: "Rita", lastName: "Correia", role: "operacao" });
+  await utilizador("financeiro@redestine.com.br", { name: "Fernanda", lastName: "Lima", role: "financeiro" });
+
   for (const tipo of ["retirada", "cobranca"]) {
     await db.Address.findOrCreate({
       where: { userId: fornecedor.id, type: tipo },
@@ -106,6 +120,19 @@ async function main() {
     // de alguem cadastrar acervo proprio a mao.
     { nome: "Painéis Divisórios RED", preco: 150, mercado: 320, qtd: 12, orig: 12, forma: "unidade", modelo: MODELOS_COMERCIAIS.PROPRIO, status: ASSET_STATUS.PUBLICADO, local: "Pilares/RJ", condicao: "seminovo", daRed: true },
     { nome: "Luva Soldável 25mm", preco: 3.2, mercado: 5.8, qtd: 0, orig: 500, forma: "conjunto", modelo: MODELOS_COMERCIAIS.CATALOGO, status: ASSET_STATUS.INATIVO, local: "Curitiba — PR", condicao: "usado_sinais" },
+    // Os tres seguintes existem para a area de OPERACAO ter pendencia real.
+    // Sem eles, "Pendencias operacionais" nascia em zero e a conferencia
+    // passava por omissao — que e o modo mais silencioso de um painel mentir.
+    //
+    // Aprovado e nao publicado: pronto para publicar, a pendencia que a
+    // Operacao resolve num clique.
+    { nome: "Grades Metálicas Galvanizadas", preco: 45, mercado: 98, qtd: 60, orig: 60, forma: "conjunto", modelo: MODELOS_COMERCIAIS.ESTOQUE, status: ASSET_STATUS.APROVADO, local: "Pilares/RJ", condicao: "usado_bom" },
+    // Localizacao vazia, que e o estado de mais da metade do acervo real: e
+    // esta linha que faz aparecer a pendencia "ativos sem localizacao" e que
+    // dimensiona o indicador de Localizacoes que ficou em espera.
+    { nome: "Portas Corta-Fogo", preco: 380, mercado: 820, qtd: 14, orig: 14, forma: "unidade", modelo: MODELOS_COMERCIAIS.ESTOQUE, status: ASSET_STATUS.PUBLICADO, local: "", condicao: "seminovo" },
+    // Publicado com saldo zero: anuncia o que nao ha para entregar.
+    { nome: "Perfis de Alumínio Anodizado", preco: 62, mercado: 130, qtd: 0, orig: 200, forma: "lote", modelo: MODELOS_COMERCIAIS.CATALOGO, status: ASSET_STATUS.PUBLICADO, local: "São Paulo — SP", condicao: "usado_bom" },
   ];
 
   const ativos = [];
@@ -278,6 +305,68 @@ async function main() {
     await ordersService.concluirOperacao(pendente.id);
   }
 
+  /**
+   * Retiradas pendentes — o indicador "Aguardando retirada" da Operacao.
+   *
+   * Este bloco NAO esta dentro do `if (!jaTemPedidos)` de proposito, e a razao
+   * e um bug que aconteceu: a venda com retirada pendente era criada uma vez,
+   * a conferencia de acoes concluia-a (e o proposito dela e mesmo concluir
+   * pedidos), e a partir da segunda execucao o painel de Operacao abria com
+   * "0 aguardando retirada". A conferencia continuava verde — contra zero.
+   *
+   * Sao duas: uma dentro do prazo e uma atrasada. Sem a segunda, a pendencia
+   * "retiradas atrasadas" nunca era exercitada, e e justamente a que faz
+   * alguem pegar o telefone.
+   */
+  const pendenteDeRetirada = {
+    pickupStatus: [PICKUP_STATUS.AGUARDANDO, PICKUP_STATUS.AGENDADA],
+    status: { [Op.notIn]: ["cancelado", "aguardando_confirmacao"] },
+  };
+
+  if (!(await db.Order.count({ where: { ...pendenteDeRetirada, pickupStatus: PICKUP_STATUS.AGUARDANDO } }))) {
+    const aguardando = await ordersService.criar(
+      {
+        buyerName: "Ana Lima",
+        buyerEmail: comprador.email,
+        buyerPhone: "(11) 97777-1234",
+        paymentMethod: "pix",
+        items: [{ assetId: ativos[0].id, quantity: 40 }],
+      },
+      { atorId: comprador.id }
+    );
+    await ordersService.confirmar(aguardando.id);
+    await ordersService.registrarRetirada(aguardando.id, {
+      status: PICKUP_STATUS.AGUARDANDO,
+      local: "Obra Barra da Tijuca",
+      endereco: "Av. das Américas, 15.000 — Barra da Tijuca, Rio de Janeiro / RJ",
+      responsavel: "Carlos Henrique",
+      contato: "(21) 99999-8888",
+    });
+  }
+
+  if (!(await db.Order.count({ where: { ...pendenteDeRetirada, pickupStatus: PICKUP_STATUS.AGENDADA } }))) {
+    const atrasada = await ordersService.criar(
+      {
+        buyerName: "Ana Lima",
+        buyerEmail: comprador.email,
+        buyerPhone: "(11) 97777-1234",
+        paymentMethod: "pix",
+        items: [{ assetId: ativos[1].id, quantity: 20 }],
+      },
+      { atorId: comprador.id }
+    );
+    await ordersService.confirmar(atrasada.id);
+    await ordersService.registrarRetirada(atrasada.id, {
+      status: PICKUP_STATUS.AGENDADA,
+      local: "Estoque RED — Belo Horizonte",
+      endereco: "Rua Sapucaí, 320 — Floresta, Belo Horizonte / MG",
+      responsavel: "Equipe RED",
+      contato: "(31) 3333-2222",
+      // Agendada para a semana passada e ainda nao retirada: o caminhao nao veio.
+      agendamento: new Date(Date.now() - 6 * 86400000),
+    });
+  }
+
   const envio = await db.Submission.findOne({ where: { supplierId: fornecedor.id } });
   if (!envio) {
     await db.Submission.create({
@@ -300,11 +389,13 @@ async function main() {
   const contagem = {
     fornecedor: fornecedor.email,
     comprador: comprador.email,
+    internos: "comercial@ / operacao@ / financeiro@redestine.com.br",
     senha: SENHA,
     ativos: await db.Asset.count({ where: { supplierId: fornecedor.id } }),
     consultas: await db.Quote.count({ where: { buyerId: comprador.id } }),
     pedidos: await db.Order.count({ where: { buyerId: comprador.id } }),
     repasses: await db.Payout.count({ where: { supplierId: fornecedor.id } }),
+    retiradasPendentes: await db.Order.count({ where: pendenteDeRetirada }),
   };
   console.log("cenário de demonstração pronto:", contagem);
   await db.sequelize.close();

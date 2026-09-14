@@ -7,7 +7,17 @@
  */
 
 const SMOKE_TAG = "[smoke]";
-const BASE = process.env.SMOKE_BASE || "http://localhost:4000/api/v1";
+/**
+ * A porta sai do ambiente porque a 4000 nem sempre e a instancia a testar: com
+ * uma segunda API a correr, conferir contra a porta ocupada testa o codigo
+ * velho e da tudo verde sem provar nada.
+ *
+ * Aceita `API_BASE` alem de `SMOKE_BASE`: os outros dois conferidores
+ * (`check:contrato` e `check:acoes`) leem `API_BASE`, e ter tres scripts com
+ * duas variaveis diferentes garante que um dia se corre a bateria inteira com
+ * um deles a apontar para outro servidor — foi o que aconteceu.
+ */
+const BASE = process.env.SMOKE_BASE || process.env.API_BASE || "http://localhost:4000/api/v1";
 const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL || "admin@redestine.com.br";
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD || "RedAdmin2026!";
 
@@ -690,13 +700,57 @@ async function main() {
 
   const gVisao = await req("GET", "/management/overview", { token });
   ok("visao geral da gestao responde", gVisao.status === 200);
-  ok("traz variacoes versus periodo anterior", gVisao.json?.data?.variacoes !== undefined);
+  // A Visao Geral passou a ser tres blocos de 2-3 KPIs, um por area, e cada um
+  // so vem para quem tem a capacidade da area. `areas` diz quais vieram, e e
+  // dai que a tela decide que titulos desenhar.
   ok(
-    "traz os dois graficos da tela",
-    Array.isArray(gVisao.json?.data?.graficos?.evolucaoVendas) &&
-      Array.isArray(gVisao.json?.data?.graficos?.vendasPorCategoria)
+    "declara as areas que a sessao alcanca",
+    Array.isArray(gVisao.json?.data?.areas) &&
+      ["comercial", "operacao", "financeiro"].every((a) => gVisao.json.data.areas.includes(a)),
+    JSON.stringify(gVisao.json?.data?.areas)
+  );
+  ok(
+    "cada area traz os seus 2-3 KPIs criticos",
+    gVisao.json?.data?.comercial?.valorVendido !== undefined &&
+      gVisao.json?.data?.operacao?.ativosSobGestao !== undefined &&
+      gVisao.json?.data?.financeiro?.receitaRed !== undefined
+  );
+  ok(
+    "as variacoes acompanham o bloco comercial, que e o unico de fluxo",
+    gVisao.json?.data?.comercial?.variacoes !== undefined
+  );
+  // Um grafico, nao dois: o de vendas por categoria saiu da Visao Geral (vive
+  // em Relatorios) e a leitura por categoria do inventario passou a ser de
+  // Operacao — duas perguntas opostas com nomes parecidos.
+  ok(
+    "traz a serie de evolucao das vendas",
+    Array.isArray(gVisao.json?.data?.graficos?.evolucaoVendas)
   );
   ok("alertas trazem o prazo da regra", gVisao.json?.data?.alertas?.prazoRepasseHoras === 48);
+
+  // Operacao: a area nova responde e traz os oito indicadores.
+  const gOperacao = await req("GET", "/management/operation", { token });
+  ok("painel de Operacao responde", gOperacao.status === 200);
+  ok(
+    "traz inventario, guarda por modelo, retirada, tempo e pendencias",
+    gOperacao.json?.data?.inventario?.valor !== undefined &&
+      gOperacao.json?.data?.porModelo?.length === 3 &&
+      gOperacao.json?.data?.aguardandoRetirada?.itens !== undefined &&
+      gOperacao.json?.data?.tempoEmEstoque?.limiteLongoDias === 90 &&
+      gOperacao.json?.data?.pendencias?.total !== undefined
+  );
+  ok(
+    "declara os indicadores que ficaram a espera de decisao",
+    gOperacao.json?.data?.pendentesDeDefinicao?.length === 2
+  );
+  const gInventario = await req("GET", "/management/operation/assets?perPage=5", { token });
+  ok("tabela operacional responde", gInventario.status === 200);
+  ok(
+    "cada linha traz status operacional e dias em estoque",
+    gInventario.json?.data?.every(
+      (l) => !!l.statusOperacionalChave && l.diasEmEstoque !== undefined
+    )
+  );
 
   const gConsultas = await req("GET", "/management/consultations", { token });
   ok("consultas da gestao respondem", gConsultas.status === 200);

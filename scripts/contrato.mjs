@@ -71,10 +71,17 @@ const CONTRATO = [
 ];
 
 const CONTRATO_GESTAO = [
+  // A Visao Geral passou a ser tres blocos de 2-3 KPIs, um por area, e cada um
+  // so vem para quem tem a capacidade da area. Conferir `d.comercial` e
+  // `d.financeiro` com o token do admin prova que os blocos existem; provar que
+  // NAO vazam entre perfis e trabalho de `check:acoes`, que tem os tres logins.
+  ["Gestão Visão Geral / áreas", "/management/overview", (d) => d, ["areas","comercial","operacao","financeiro"]],
+  ["Gestão Visão Geral / bloco Comercial", "/management/overview", (d) => d.comercial, ["valorVendido","vendasRealizadas","consultasEmAberto","ativosAguardandoAprovacao","variacoes"]],
+  ["Gestão Visão Geral / bloco Operação", "/management/overview", (d) => d.operacao, ["ativosSobGestao","valorDoInventario","aguardandoRetirada","valorAguardandoRetirada","pendenciasOperacionais"]],
+  ["Gestão Visão Geral / bloco Financeiro", "/management/overview", (d) => d.financeiro, ["receitaRed","aRepassar","repassesForaDoPrazo","prazoRepasseHoras"]],
   ["Gestão Visão Geral / estado", "/management/overview", (d) => d.estado, ["fornecedoresAtivos","ativosPublicados","valorTotalPublicado"]],
   ["Gestão Visão Geral / fluxo", "/management/overview", (d) => d.fluxo, ["vendasRealizadas","valorVendido","ticketMedio"]],
   ["Gestão Visão Geral / financeiro", "/management/overview", (d) => d.financeiro, ["receitaRed","aRepassar","repassado"]],
-  ["Gestão Visão Geral / variações", "/management/overview", (d) => d.variacoes, ["vendasRealizadas","valorVendido","consultasRecebidas"]],
   ["Gestão Visão Geral / pendências", "/management/overview", (d) => d.alertas, ["consultasEmAberto","ativosAguardandoAprovacao","enviosSemAvaliacao","repassesForaDoPrazo","prazoRepasseHoras"]],
   ["Gestão Visão Geral / gráfico vendas", "/management/overview", (d) => d.graficos?.evolucaoVendas?.[0], ["rotulo","valor"]],
   ["Gestão Pedidos / linha", "/orders", (d) => primeira(d), ["id","reference","buyerName","buyerEmail","status","paymentStatus","pickupStatus","subtotal","total","createdAt","itens","channel"]],
@@ -87,12 +94,28 @@ const CONTRATO_GESTAO = [
   ["Gestão Ativo / imagem", "__ativo__", (d) => d.imagens?.[0], ["id","url","position"]],
   ["Gestão Envios / linha", "/submissions", (d) => primeira(d), ["id","reference","assetType","approximateQuantity","company","name","email","city","photos","status","createdAt"]],
   ["Gestão Envio / detalhe", "__envio__", (d) => d, ["id","reference","assetType","description","approximateQuantity","notes","photos","attributes","city","name","company","email","phone","supplierId","status","createdAt","avaliacoes"]],
-  ["Gestão Visão Geral / gráfico categoria", "/management/overview", (d) => d.graficos?.vendasPorCategoria?.[0], ["rotulo","valor","cor","percentual"]],
   ["Comercial Consultas / cartões", "/management/consultations/summary", (d) => d, ["total","novas","emAtendimento","respondidas","encerradas"]],
   ["Comercial Consultas / linha", "/management/consultations", (d) => primeira(d), ["id","data","cliente","ativo","quantidade","status","responsavel","atualizacao"]],
   ["Comercial Ativos / linha", "/management/assets", (d) => primeira(d), ["id","codigo","nome","fornecedor","categoria","local","modelo","participacaoFornecedor","preco","potencialFornecedor","potencialRed","status","publicadoEm"]],
   ["Comercial Vendas / linha", "/management/sales", (d) => primeira(d), ["id","venda","data","cliente","fornecedor","ativo","quantidade","valorBruto","participacaoFornecedor","statusRetirada","canal","canalChave"]],
-  ["Comercial Vendas / cartões", "/management/sales/summary", (d) => d, ["vendasRealizadas","valorBrutoVendido","ticketMedio","aguardandoRetirada"]],
+  // `aguardandoRetirada` saiu deste resumo: e indicador de fluxo fisico e
+  // passou a viver em Operacao, com valor parado e retiradas atrasadas ao lado.
+  ["Comercial Vendas / cartões", "/management/sales/summary", (d) => d, ["vendasRealizadas","valorBrutoVendido","ticketMedio"]],
+  // ---------------- Operação
+  ["Operação / inventário", "/management/operation", (d) => d.inventario, ["registros","unidades","valor"]],
+  ["Operação / por modelo comercial", "/management/operation", (d) => d.porModelo?.[0], ["modelo","modeloChave","registros","unidades","valor","guarda"]],
+  ["Operação / aguardando retirada", "/management/operation", (d) => d.aguardandoRetirada, ["itens","ativos","unidades","valor","atrasados","valorAtrasado","slaDias"]],
+  ["Operação / tempo em estoque", "/management/operation", (d) => d.tempoEmEstoque, ["mediaDias","medianaDias","limiteLongoDias","acimaDoLimite","referencia"]],
+  ["Operação / pendências", "/management/operation", (d) => d.pendencias, ["prontosParaPublicar","retiradasAtrasadas","semLocalizacao","publicadoSemSaldo","total"]],
+  ["Operação / gráfico por categoria", "/management/operation", (d) => d.graficos?.inventarioPorCategoria?.[0], ["rotulo","valor","registros","unidades","percentual","cor"]],
+  // Os dois indicadores em espera vem declarados no payload de proposito: a
+  // tela le esta lista para nao inventar um cartao vazio, e quem for
+  // implementar sabe onde entra. Se o contrato deixar de a devolver, a
+  // informacao de que falta algo desaparece em silencio.
+  ["Operação / pendentes de definição", "/management/operation", (d) => d.pendentesDeDefinicao?.[0], ["chave","rotulo","motivo","medidaDoProblema"]],
+  ["Operação / linha da tabela", "/management/operation/assets", (d) => primeira(d), ["id","codigo","nome","proprietario","proprioDaRed","modelo","modeloChave","guarda","categoria","local","quantidade","quantidadeOriginal","unidade","valor","statusOperacional","statusOperacionalChave","statusCicloDeVida","diasEmEstoque","referenciaEstoque","retiradaPendente"]],
+  ["Operação / detalhe do ativo", "__ativoOperacional__", (d) => d, ["id","codigo","nome","categoria","modelo","guarda","proprietario","local","condicao","quantidade","quantidadeOriginal","quantidadeVendida","unidade","valor","statusOperacional","statusOperacionalChave","statusCicloDeVida","diasEmEstoque","referenciaEstoque","retiradas"]],
+  ["Operação / inventário por categoria (rota própria)", "/management/operation/by-category", (d) => primeira(d), ["rotulo","valor","registros","percentual","cor"]],
   ["Financeiro Movimentações / linha", "/management/financial/movements", (d) => primeira(d), ["id","data","venda","fornecedor","ativo","valorBruto","participacaoFornecedor","repasse","receitaRed","statusFinanceiro"]],
   ["Financeiro Movimentações / totais", "/management/financial/movements", (d, meta) => meta.totais, ["valorBruto","valorFornecedores","receitaRed","custosAprovados","valorLiquido"]],
   ["Detalhe da Venda / informações", "__mov__", (d) => d, ["venda","data","cliente","fornecedor","ativo","quantidade","statusRetirada"]],
@@ -119,6 +142,7 @@ const movId = (await get("/management/financial/movements", tkAdmin)).json.data[
 const envioId = (await get("/submissions", tkAdmin)).json.data[0]?.id;
 const ativoId = (await get("/assets/admin?perPage=1", tkAdmin)).json.data[0]?.id;
 const pedidoId = (await get("/orders?perPage=1", tkAdmin)).json.data[0]?.id;
+const ativoOperacionalId = (await get("/management/operation/assets?perPage=1", tkAdmin)).json.data[0]?.id;
 // Lido com o token do FORNECEDOR de proposito: o detalhe do proprio ativo so
 // existe para quem e dono dele, e resolver este id com o admin conferiria o
 // contrato contra uma rota que o fornecedor nao alcanca.
@@ -133,6 +157,7 @@ const resolver = (rota) =>
   : rota === "__pedido__" ? `/orders/${pedidoId}`
   : rota === "__conclusao__" ? `/orders/${pedidoId}/completion`
   : rota === "__meuAtivo__" ? `/me/my-assets/${meuAtivoId}`
+  : rota === "__ativoOperacional__" ? `/management/operation/assets/${ativoOperacionalId}`
   : rota;
 
 let faltas = 0, vazios = 0, okc = 0;

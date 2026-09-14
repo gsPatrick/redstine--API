@@ -198,7 +198,20 @@ async function movimentacao(id) {
 async function historicoDaVenda(p) {
   const o = p.pedido;
   const eventos = [];
-  const add = (data, titulo, detalhe) => data && eventos.push({ data, titulo, detalhe });
+  /**
+   * `detalhe` entra sempre, mesmo vazio — como `null`, nao ausente.
+   *
+   * Metade destes eventos nao tem detalhe ("Retirada agendada" e so um
+   * carimbo), e a chave desaparecia do objeto nesses casos. Isso passou a
+   * importar quando o primeiro evento da linha do tempo deixou de ser sempre
+   * "Venda realizada": uma retirada agendada para uma data anterior a venda
+   * (que acontece — o comprador agenda antes de o pedido ser lancado a mao)
+   * ordena-se primeiro, e a conferencia de contrato, que le o primeiro
+   * elemento, acusava `detalhe` em falta. O campo e opcional em CONTEUDO, nao
+   * em existencia.
+   */
+  const add = (data, titulo, detalhe = null) =>
+    data && eventos.push({ data, titulo, detalhe: detalhe ?? null });
 
   add(o?.createdAt, "Venda realizada", `Venda #${o?.reference} registrada.`);
   add(

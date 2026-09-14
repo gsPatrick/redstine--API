@@ -307,17 +307,14 @@ async function resumoDeVendas(query) {
   const periodo = janela(query);
   const where = { status: { [Op.ne]: PAYOUT_STATUS.CANCELADO }, ...entre("createdAt", periodo) };
 
-  const [agg, aguardando] = await Promise.all([
-    db.Payout.findOne({
-      where,
-      attributes: [
-        [fn("COUNT", col("Payout.id")), "quantidade"],
-        [fn("COALESCE", fn("SUM", col("gross_amount")), 0), "bruto"],
-      ],
-      raw: true,
-    }),
-    db.Order.count({ where: { pickupStatus: PICKUP_STATUS.AGUARDANDO } }),
-  ]);
+  const agg = await db.Payout.findOne({
+    where,
+    attributes: [
+      [fn("COUNT", col("Payout.id")), "quantidade"],
+      [fn("COALESCE", fn("SUM", col("gross_amount")), 0), "bruto"],
+    ],
+    raw: true,
+  });
 
   const quantidade = Number(agg?.quantidade || 0);
   const bruto = cent(agg?.bruto);
@@ -329,7 +326,16 @@ async function resumoDeVendas(query) {
     // Sem venda no periodo o ticket e null, nao zero: zero sugere venda de
     // valor nenhum, null diz que nao ha base para a media.
     ticketMedio: quantidade ? cent(bruto / quantidade) : null,
-    aguardandoRetirada: aguardando,
+    /**
+     * `aguardandoRetirada` saiu daqui.
+     *
+     * E indicador de fluxo FISICO — "a venda esta feita, a carga nao saiu" —
+     * e passou a viver na area de Operacao, com o que faltava para ser
+     * acionavel: quantidade, valor parado e quantas retiradas estao atrasadas.
+     * Manter as duas versoes era garantir que um dia divergiriam (esta contava
+     * PEDIDOS, a de Operacao conta ITENS) e que ninguem saberia qual estava
+     * certa.
+     */
   };
 }
 

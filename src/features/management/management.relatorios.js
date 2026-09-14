@@ -14,9 +14,17 @@ const { PAYOUT_STATUS, ASSET_STATUS, CAPABILITIES, CAPS_POR_PAPEL, ROLES } = req
  * FLUXO. O que e estado vive na visao geral e nao passa por aqui.
  */
 
-/** Evolucao do valor bruto vendido. Baldes vazios entram com zero — buraco no
- *  eixo faria a linha saltar e sugerir um mes sem operacao. */
-async function evolucaoDeVendas(query) {
+/**
+ * Evolucao do valor bruto vendido. Baldes vazios entram com zero — buraco no
+ * eixo faria a linha saltar e sugerir um mes sem operacao.
+ *
+ * `receitaRed` so entra com `comFinanceiro`, e isso e correcao de um vazamento
+ * real: a serie vinha sempre com a receita da RED mes a mes, e esta rota exige
+ * apenas capacidade COMERCIAL. O perfil Comercial lia a margem da RED do
+ * grafico da Visao Geral — pelo caminho mais discreto possivel, um campo extra
+ * num ponto de linha que a tela nao desenha.
+ */
+async function evolucaoDeVendas(query, { comFinanceiro = false } = {}) {
   const periodo = janela(query);
   const dias = periodo.desde ? Math.ceil((periodo.ate - periodo.desde) / 86400000) : 365;
   const unidade = dias <= 31 ? "day" : dias <= 120 ? "week" : "month";
@@ -46,7 +54,7 @@ async function evolucaoDeVendas(query) {
           ? d.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "")
           : `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`,
       valor: cent(l.bruto),
-      receitaRed: cent(l.red),
+      ...(comFinanceiro ? { receitaRed: cent(l.red) } : {}),
     };
   });
 }
@@ -246,6 +254,8 @@ function permissoes() {
   const descricao = {
     [CAPABILITIES.COMMERCIAL_READ]: { label: "Ler dados comerciais", area: "Comercial" },
     [CAPABILITIES.COMMERCIAL_WRITE]: { label: "Editar dados comerciais", area: "Comercial" },
+    [CAPABILITIES.OPERATION_READ]: { label: "Ler dados operacionais", area: "Operação" },
+    [CAPABILITIES.OPERATION_WRITE]: { label: "Movimentar ativos e retiradas", area: "Operação" },
     [CAPABILITIES.FINANCIAL_READ]: { label: "Ler dados financeiros", area: "Financeiro" },
     [CAPABILITIES.FINANCIAL_WRITE]: { label: "Editar dados financeiros", area: "Financeiro" },
     [CAPABILITIES.ADMIN_READ]: { label: "Ler configurações", area: "Administração" },
@@ -253,11 +263,16 @@ function permissoes() {
   };
 
   const rotulo = {
-    [ROLES.ADMIN]: { nome: "Master", descricao: "Acesso completo às três áreas." },
+    [ROLES.ADMIN]: { nome: "Master", descricao: "Acesso completo às quatro áreas." },
     [ROLES.COMERCIAL]: {
       nome: "Comercial",
       descricao:
         "Fornecedores, ativos, consultas e vendas. Não vê receita líquida da RED, repasses consolidados nem pagamentos.",
+    },
+    [ROLES.OPERACAO]: {
+      nome: "Operação",
+      descricao:
+        "Inventário, guarda dos ativos, retiradas e pendências operacionais. Não vê receita da RED, repasses nem pagamentos, e não administra consultas.",
     },
     [ROLES.CURADOR]: {
       nome: "Curadoria",

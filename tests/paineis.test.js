@@ -77,6 +77,29 @@ describe("matriz de permissões exposta ao painel", () => {
     assert.ok(!c.capacidades.includes(CAPABILITIES.FINANCIAL_READ));
   });
 
+  test("o perfil Operação existe na matriz, com área própria", () => {
+    const o = m.perfis.find((p) => p.chave === "operacao");
+    assert.ok(o, "perfil Operação em falta na matriz exposta ao painel");
+    assert.ok(o.capacidades.includes(CAPABILITIES.OPERATION_READ));
+    assert.ok(o.acessaPainelDeGestao);
+    assert.ok(m.capacidades.some((c) => c.chave === CAPABILITIES.OPERATION_READ && c.area === "Operação"));
+  });
+
+  test("Operação não alcança financeiro nem comercial", () => {
+    // A tela de Permissões desenha esta matriz, e é por ela que a RED confere
+    // quem vê o quê. Uma matriz que descreva errado o backend é pior do que
+    // matriz nenhuma: passa a garantir uma separação que não existe.
+    const o = m.perfis.find((p) => p.chave === "operacao");
+    assert.ok(!o.capacidades.includes(CAPABILITIES.FINANCIAL_READ));
+    assert.ok(!o.capacidades.includes(CAPABILITIES.COMMERCIAL_READ));
+  });
+
+  test("todo perfil com acesso ao painel tem descrição — a tela mostra-a", () => {
+    for (const p of m.perfis.filter((x) => x.acessaPainelDeGestao)) {
+      assert.ok(p.nome && p.descricao, `perfil ${p.chave} sem nome ou descrição`);
+    }
+  });
+
   test("fornecedor e comprador não acessam o painel de gestão", () => {
     for (const chave of ["fornecedor", "comprador"]) {
       assert.equal(m.perfis.find((p) => p.chave === chave).acessaPainelDeGestao, false);

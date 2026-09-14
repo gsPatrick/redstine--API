@@ -19,6 +19,13 @@ async function chamar(m, r, tk, body) {
 const admin = await tok("admin@redestine.com.br","RedAdmin2026!");
 const forn  = await tok("joao.silva@empresa.com.br","Fornecedor@2026");
 const comp  = await tok("ana.lima@construtoraalfa.com.br","Fornecedor@2026");
+// Um login por area interna. Sem eles a separacao de acesso so era medida
+// contra fornecedor e comprador — e a pergunta que a regra de negocio faz e
+// outra: o perfil Operacao alcanca o financeiro? O Comercial alcanca a
+// Operacao? Descrever a matriz de permissoes nao e prova-la.
+const areaCom = await tok("comercial@redestine.com.br","Fornecedor@2026");
+const areaOp  = await tok("operacao@redestine.com.br","Fornecedor@2026");
+const areaFin = await tok("financeiro@redestine.com.br","Fornecedor@2026");
 
 let mau = 0;
 const ok = (n, c, extra="") => { if (c) console.log(`  ok      ${n}`); else { console.log(`  FALHA   ${n} ${extra}`); mau++; } };
@@ -653,6 +660,122 @@ const funil = await chamar("GET",`/events/assets/${alvoView.id}/funnel`,admin);
 ok("O funil do ativo conta as mesmas visualizações",
    funil.json?.data?.visualizacoes >= base + 2, JSON.stringify(funil.json?.data));
 
+
+// ---------------------------------------------------------------------------
+// Operação — inventário e fluxo físico
+// ---------------------------------------------------------------------------
+console.log("\n== OPERAÇÃO ==");
+
+const ind = (await chamar("GET","/management/operation",areaOp)).json.data;
+ok("Indicadores da Operação respondem ao perfil da área", !!ind?.inventario);
+
+// A soma dos tres modelos TEM de ser o inventario. Se divergir, ou um modelo
+// novo ficou de fora do agrupamento ou os dois escopos deixaram de concordar —
+// e o cartao "Valor total dos ativos" passaria a discordar dos tres ao lado.
+const somaModelos = ind.porModelo.reduce((a,m)=>a+m.valor,0);
+const somaRegistros = ind.porModelo.reduce((a,m)=>a+m.registros,0);
+ok("RED Estoque + RED Catálogo + Próprios = inventário total",
+   Math.abs(somaModelos - ind.inventario.valor) < 0.01 && somaRegistros === ind.inventario.registros,
+   `(${somaModelos} vs ${ind.inventario.valor} · ${somaRegistros} vs ${ind.inventario.registros})`);
+
+ok("Os três modelos comerciais aparecem sempre, mesmo com zero ativos",
+   ind.porModelo.length === 3 && ind.porModelo.every(m=>["estoque","catalogo","proprio"].includes(m.modeloChave)));
+
+ok("A guarda física vem junto do modelo — é metade da resposta a 'onde está'",
+   ind.porModelo.find(m=>m.modeloChave==="catalogo").guarda === "fornecedor" &&
+   ind.porModelo.find(m=>m.modeloChave==="estoque").guarda === "red");
+
+// O inventario e ESTADO: filtrar por periodo nao pode encolher o estoque.
+const ind7 = (await chamar("GET","/management/operation?periodo=7d",areaOp)).json.data;
+ok("Os indicadores de inventário ignoram o filtro de período",
+   ind7.inventario.registros === ind.inventario.registros && ind7.inventario.valor === ind.inventario.valor,
+   `(7d: ${ind7.inventario.registros} · tudo: ${ind.inventario.registros})`);
+
+// Mas a TABELA responde, porque recorta ENTRADA no inventario.
+const tabTudo = (await chamar("GET","/management/operation/assets?perPage=100&periodo=tudo",areaOp)).json;
+const tab7 = (await chamar("GET","/management/operation/assets?perPage=100&periodo=7d",areaOp)).json;
+ok("A tabela responde ao período, pela data de entrada no inventário",
+   tab7.meta.total <= tabTudo.meta.total, `(7d ${tab7.meta.total} <= tudo ${tabTudo.meta.total})`);
+
+// O filtro de status operacional e o ROTULO da linha saem da mesma regra. Este
+// e o teste que impede o bug classico: o filtro "sem saldo" devolver linhas
+// rotuladas "em guarda" porque alguem mexeu num dos dois lados so.
+const CHAVES = ["aguardando_retirada","pronto_para_publicar","sem_saldo","reservado","em_guarda_red","em_catalogo","saiu_do_inventario"];
+let divergentes = 0, cobertos = 0;
+for (const chave of CHAVES) {
+  const r = (await chamar("GET",`/management/operation/assets?perPage=100&statusOperacional=${chave}`,areaOp)).json;
+  const erradas = (r.data||[]).filter(l=>l.statusOperacionalChave !== chave);
+  divergentes += erradas.length;
+  if (r.meta.total > 0) cobertos++;
+}
+ok("Cada filtro de status operacional devolve só linhas com aquele status", divergentes === 0, `(${divergentes} divergentes)`);
+ok("O cenário exercita a maioria dos status operacionais", cobertos >= 5, `(${cobertos} de ${CHAVES.length} com linha)`);
+
+const statusInvalido = await chamar("GET","/management/operation/assets?statusOperacional=inventado",areaOp);
+ok("Status operacional desconhecido é recusado, não ignorado",
+   statusInvalido.status === 422 || statusInvalido.status === 400, `(${statusInvalido.status})`);
+
+// Dias em estoque de um ativo vendido nao pode continuar a contar.
+const saiu = (await chamar("GET","/management/operation/assets?perPage=100&statusOperacional=saiu_do_inventario",areaOp)).json.data;
+if (saiu.length) {
+  const antes = saiu[0].diasEmEstoque;
+  await new Promise(r=>setTimeout(r,1100));
+  const depois = (await chamar("GET","/management/operation/assets?perPage=100&statusOperacional=saiu_do_inventario",areaOp)).json.data
+    .find(l=>l.id===saiu[0].id)?.diasEmEstoque;
+  ok("Dias em estoque de ativo vendido para de contar na data da venda", antes === depois, `(${antes} -> ${depois})`);
+} else ok("Havia ativo fora do inventário para conferir a parada da contagem", false);
+
+const todasLinhas = tabTudo.data;
+ok("Toda linha da tabela tem status operacional resolvido",
+   todasLinhas.every(l=>!!l.statusOperacionalChave),
+   `(${todasLinhas.filter(l=>!l.statusOperacionalChave).length} sem status)`);
+ok("Ativo do acervo próprio aparece como RED, não com fornecedor vazio",
+   todasLinhas.filter(l=>l.proprioDaRed).every(l=>l.proprietario === "RED"));
+
+// A pendencia tem de bater com o filtro que a mostra, senao o clique no
+// numero abre uma lista de outro tamanho.
+const prontos = (await chamar("GET","/management/operation/assets?perPage=100&statusOperacional=pronto_para_publicar",areaOp)).json.meta.total;
+ok("A pendência 'prontos para publicar' bate com o filtro que a abre",
+   prontos === ind.pendencias.prontosParaPublicar, `(${prontos} vs ${ind.pendencias.prontosParaPublicar})`);
+
+const semSaldoOp = (await chamar("GET","/management/operation/assets?perPage=100&statusOperacional=sem_saldo",areaOp)).json.meta.total;
+ok("A pendência 'publicados sem saldo' bate com o filtro que a abre",
+   semSaldoOp === ind.pendencias.publicadoSemSaldo, `(${semSaldoOp} vs ${ind.pendencias.publicadoSemSaldo})`);
+
+ok("O total de pendências é a soma das suas partes — não um número solto",
+   ind.pendencias.total === ind.pendencias.prontosParaPublicar + ind.pendencias.retiradasAtrasadas
+     + ind.pendencias.semLocalizacao + ind.pendencias.publicadoSemSaldo);
+
+// Retirada atrasada existe e e visivel: e a linha que faz alguem pegar o telefone.
+ok("Há retirada pendente no cenário — o indicador não passa por omissão", ind.aguardandoRetirada.itens > 0, `(${ind.aguardandoRetirada.itens})`);
+ok("Retirada com agendamento vencido conta como atrasada", ind.aguardandoRetirada.atrasados > 0, `(${ind.aguardandoRetirada.atrasados})`);
+
+const comRetirada = (await chamar("GET","/management/operation/assets?perPage=100&statusOperacional=aguardando_retirada",areaOp)).json.data;
+if (comRetirada.length) {
+  const det = (await chamar("GET",`/management/operation/assets/${comRetirada[0].id}`,areaOp)).json.data;
+  ok("O detalhe operacional traz a retirada pendente com pedido e comprador",
+     det.retiradas.length > 0 && !!det.retiradas[0].pedido && !!det.retiradas[0].comprador,
+     JSON.stringify(det.retiradas[0]||{}).slice(0,120));
+  // O ponto da separacao de acesso dentro do proprio payload: a Operacao ve o
+  // que precisa para mover a carga, e nao ve o dinheiro dela.
+  const texto = JSON.stringify(det);
+  ok("O detalhe operacional não carrega nenhum campo financeiro",
+     !/receitaRed|repasse|supplierAmount|redAmount|margem|custos/i.test(texto));
+} else ok("Havia ativo aguardando retirada para abrir o detalhe", false);
+
+// O filtro dimensional tem de recortar os indicadores E a tabela juntos: se o
+// cartao muda e a tabela nao, a tela mostra dois recortes ao mesmo tempo.
+const soEstoque = (await chamar("GET","/management/operation?commercialModel=estoque",areaOp)).json.data;
+const tabEstoque = (await chamar("GET","/management/operation/assets?perPage=100&commercialModel=estoque&periodo=tudo",areaOp)).json.data;
+ok("O filtro por modelo recorta indicadores e tabela ao mesmo tempo",
+   soEstoque.inventario.registros === ind.porModelo.find(m=>m.modeloChave==="estoque").registros &&
+   tabEstoque.every(l=>l.modeloChave==="estoque"));
+
+// A tabela da Operacao NAO pode ter coluna de dinheiro que nao seja o anunciado.
+const proibidos = ["receitaRed","potencialRed","potencialFornecedor","repasse","participacaoRed","participacaoFornecedor","margemRed","custos"];
+const vazando = proibidos.filter(c => c in (todasLinhas[0]||{}));
+ok("A tabela da Operação não expõe receita, repasse nem participação", vazando.length === 0, `(${vazando.join(", ")})`);
+
 // Separação de acesso
 console.log("\n== SEPARAÇÃO DE ACESSO ==");
 const semToken = await chamar("GET","/management/financial/movements");
@@ -711,6 +834,88 @@ if (envio2) {
   const fornEditaEnvio = await chamar("PATCH",`/submissions/${envio2.id}`,forn,{ city:"invadido" });
   ok("Fornecedor não edita envio", fornEditaEnvio.status===403, `(veio ${fornEditaEnvio.status})`);
 }
+
+
+// Quatro áreas, quatro perfis: cada um vê o seu, o Master vê tudo.
+console.log("\n-- áreas do painel --");
+const NEGADO = [
+  ["Operação não alcança o financeiro global", "/management/financial/movements", areaOp],
+  ["Operação não alcança repasses", "/management/financial/payouts", areaOp],
+  ["Operação não alcança relatório por modelo (margem da RED)", "/management/reports/by-model", areaOp],
+  ["Operação não alcança a exportação (carrega dado financeiro)", "/management/reports/vendas/export", areaOp],
+  ["Operação não alcança a tabela comercial de ativos", "/management/assets", areaOp],
+  ["Operação não alcança consultas", "/management/consultations", areaOp],
+  ["Operação não alcança vendas", "/management/sales", areaOp],
+  ["Comercial não alcança a Operação", "/management/operation", areaCom],
+  ["Comercial não alcança a tabela da Operação", "/management/operation/assets", areaCom],
+  ["Financeiro não alcança a Operação", "/management/operation", areaFin],
+  ["Fornecedor não alcança a Operação", "/management/operation", forn],
+  ["Comprador não alcança a Operação", "/management/operation", comp],
+  ["Comercial continua sem alcançar o financeiro", "/management/financial/movements", areaCom],
+  ["Financeiro continua sem alcançar consultas", "/management/consultations", areaFin],
+];
+for (const [nome, rota, tk] of NEGADO) {
+  const r = await chamar("GET", rota, tk);
+  ok(nome, r.status === 403, `(veio ${r.status})`);
+}
+
+const opSemToken = await chamar("GET","/management/operation");
+ok("Operação exige autenticação", opSemToken.status === 401, `(veio ${opSemToken.status})`);
+
+// O Master vê as quatro áreas.
+const tudoMaster = await chamar("GET","/management/operation",admin);
+ok("Master alcança a Operação", tudoMaster.status === 200);
+
+/**
+ * A Visão Geral é a única rota que as três áreas partilham, e por isso o corte
+ * nao pode ser por rota: e o CONTEUDO que muda por perfil. Este bloco e o que
+ * protege a correcao — antes a rota exigia `commercial_read` e devolvia
+ * `financeiro.receitaRed` no mesmo payload, ou seja, o perfil Comercial lia
+ * receita da RED e repasse pela Visao Geral.
+ */
+console.log("\n-- visão geral por perfil --");
+const vgCom = (await chamar("GET","/management/overview",areaCom)).json.data;
+ok("Visão Geral do Comercial traz só o bloco comercial",
+   JSON.stringify(vgCom.areas) === JSON.stringify(["comercial"]), JSON.stringify(vgCom.areas));
+ok("Visão Geral do Comercial NÃO traz receita da RED nem repasse",
+   !vgCom.financeiro && !/receitaRed|aRepassar/.test(JSON.stringify(vgCom)));
+ok("Visão Geral do Comercial NÃO traz a área de Operação", !vgCom.operacao);
+// O vazamento mais discreto que existia: um campo extra dentro de cada ponto
+// do gráfico de evolução, numa rota que exige apenas capacidade comercial.
+const evoCom = (await chamar("GET","/management/reports/sales-evolution?periodo=12m",areaCom)).json.data;
+ok("A série de evolução NÃO leva a receita da RED ao perfil Comercial",
+   evoCom.every(p => !("receitaRed" in p)), JSON.stringify(evoCom[0]||{}));
+const evoFin = (await chamar("GET","/management/reports/sales-evolution?periodo=12m",admin)).json.data;
+ok("Mas leva para quem tem capacidade financeira", evoFin.every(p => "receitaRed" in p));
+
+const vgOp = (await chamar("GET","/management/overview",areaOp)).json.data;
+ok("Visão Geral da Operação traz só o bloco de operação",
+   JSON.stringify(vgOp.areas) === JSON.stringify(["operacao"]), JSON.stringify(vgOp.areas));
+ok("Visão Geral da Operação NÃO traz nada financeiro",
+   !vgOp.financeiro && !/receitaRed|aRepassar|repassado/.test(JSON.stringify(vgOp)));
+ok("Visão Geral da Operação NÃO traz vendas nem consultas do comercial",
+   !vgOp.comercial && !vgOp.fluxo && !vgOp.estado);
+
+const vgFin = (await chamar("GET","/management/overview",areaFin)).json.data;
+ok("Visão Geral do Financeiro abre — e antes devolvia 403 ao próprio dono da área",
+   JSON.stringify(vgFin.areas) === JSON.stringify(["financeiro"]), JSON.stringify(vgFin.areas));
+ok("Visão Geral do Financeiro NÃO traz a área de Operação nem a comercial",
+   !vgFin.operacao && !vgFin.comercial);
+
+const vgAdmin = (await chamar("GET","/management/overview",admin)).json.data;
+ok("Visão Geral do Master traz as três áreas",
+   ["comercial","operacao","financeiro"].every(a=>vgAdmin.areas.includes(a)), JSON.stringify(vgAdmin.areas));
+
+// A matriz de permissoes exposta ao painel tem de conhecer o perfil novo,
+// senao a tela de Permissoes mostra tres colunas para quatro areas.
+const matriz = (await chamar("GET","/management/permissions",admin)).json.data;
+const perfilOp = matriz.perfis.find(p=>p.chave==="operacao");
+ok("A matriz de permissões conhece o perfil Operação",
+   !!perfilOp && perfilOp.capacidades.includes("operation_read"));
+ok("O perfil Operação NÃO tem capacidade financeira nem comercial na matriz",
+   !perfilOp.capacidades.includes("financial_read") && !perfilOp.capacidades.includes("commercial_read"));
+ok("A matriz expõe as capacidades de Operação como área própria",
+   matriz.capacidades.some(c=>c.chave==="operation_read" && c.area==="Operação"));
 
 console.log(mau ? `\n${mau} ação com problema` : "\ntodas as ações da tela funcionam");
 process.exit(mau?1:0);

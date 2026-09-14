@@ -5,13 +5,14 @@ const { z } = require("zod");
 const controller = require("./management.controller");
 const { validate } = require("../../middlewares/validate");
 const { requireAuth } = require("../../middlewares/auth");
-const { requireCapability } = require("../../middlewares/capability");
+const { requireCapability, requireAnyCapability } = require("../../middlewares/capability");
 const {
   CAPABILITIES,
   ASSET_STATUS,
   QUOTE_STATUS,
   PAYOUT_STATUS,
   MODELOS_COMERCIAIS,
+  STATUS_OPERACIONAL,
 } = require("../../config/constants");
 
 const router = Router();
@@ -55,6 +56,27 @@ const vendasQuery = z.object({
   status: z.nativeEnum(PAYOUT_STATUS).optional(),
 });
 
+/**
+ * Filtros da Operacao.
+ *
+ * Sem `location`: o filtro por localizacao esta em espera ate `assets.location`
+ * virar lista fechada. Aceita-lo hoje entregaria um filtro que nao encontra
+ * "Rio de Janeiro/RJ" quando o utilizador escolhe "Rio de Janeiro — RJ".
+ * `search` cobre o caso urgente, porque busca por texto nao promete exatidao.
+ */
+const operacaoQuery = z.object({
+  ...periodo,
+  commercialModel: z.nativeEnum(MODELOS_COMERCIAIS).optional(),
+  category: z.string().trim().optional(),
+  supplierId: z.string().uuid().optional(),
+});
+
+const operacaoAtivosQuery = operacaoQuery.extend({
+  ...paginacao,
+  statusOperacional: z.nativeEnum(STATUS_OPERACIONAL).optional(),
+  search: z.string().trim().min(1).max(120).optional(),
+});
+
 const repassesQuery = z.object({
   ...paginacao,
   aba: z.enum(["devidos", "programados", "pagos", "pendentes"]).optional(),
@@ -75,12 +97,30 @@ const configSchema = z.record(z.union([z.string(), z.number(), z.boolean()]));
 router.use(requireAuth);
 
 const comercialRead = requireCapability(CAPABILITIES.COMMERCIAL_READ);
+const operacaoRead = requireCapability(CAPABILITIES.OPERATION_READ);
 const financeiroRead = requireCapability(CAPABILITIES.FINANCIAL_READ);
 const adminRead = requireCapability(CAPABILITIES.ADMIN_READ);
 const adminWrite = requireCapability(CAPABILITIES.ADMIN_WRITE);
 
 // ---------------------------------------------------------------- Visão Geral
-router.get("/overview", comercialRead, validate({ query: filtroPeriodo }), controller.visaoGeral);
+/**
+ * Qualquer capacidade de gestao entra; o CONTEUDO e que e recortado no service.
+ *
+ * Exigir `commercial_read` aqui era errado nas duas pontas: barrava o perfil
+ * Financeiro da sua propria visao geral (a casca do painel deixava-o entrar e
+ * a API devolvia 403) e, ao mesmo tempo, entregava receita RED e repasse ao
+ * perfil Comercial, que passava a checagem.
+ */
+router.get(
+  "/overview",
+  requireAnyCapability(
+    CAPABILITIES.COMMERCIAL_READ,
+    CAPABILITIES.OPERATION_READ,
+    CAPABILITIES.FINANCIAL_READ
+  ),
+  validate({ query: filtroPeriodo }),
+  controller.visaoGeral
+);
 
 // ------------------------------------------------------------------ Comercial
 router.get("/commercial", comercialRead, validate({ query: filtroPeriodo }), controller.painelComercial);
@@ -94,6 +134,30 @@ router.get(
 router.get("/assets", comercialRead, validate({ query: ativosQuery }), controller.ativos);
 router.get("/sales", comercialRead, validate({ query: vendasQuery }), controller.vendas);
 router.get("/sales/summary", comercialRead, validate({ query: filtroPeriodo }), controller.resumoVendas);
+
+// ------------------------------------------------------------------- Operação
+// Capacidade PROPRIA. Um perfil Comercial nao entra aqui, e um perfil Operacao
+// nao entra em /financial — o cliente pediu areas com acesso recortado, e
+// reaproveitar `commercial_read` teria dado as duas coisas de graca.
+router.get("/operation", operacaoRead, validate({ query: operacaoQuery }), controller.painelOperacao);
+router.get(
+  "/operation/assets",
+  operacaoRead,
+  validate({ query: operacaoAtivosQuery }),
+  controller.ativosOperacao
+);
+router.get(
+  "/operation/assets/:id",
+  operacaoRead,
+  validate({ params: idParam }),
+  controller.ativoOperacional
+);
+router.get(
+  "/operation/by-category",
+  operacaoRead,
+  validate({ query: operacaoQuery }),
+  controller.inventarioPorCategoria
+);
 
 // ------------------------------------------------------------------ Financeiro
 router.get("/financial", financeiroRead, validate({ query: filtroPeriodo }), controller.painelFinanceiro);

@@ -9,6 +9,10 @@ const ROLES = {
   CURADOR: "curador",
   // Relacionamento, ativos, consultas e vendas. NAO ve receita RED nem repasses.
   COMERCIAL: "comercial",
+  // Inventario e fluxo fisico dos ativos: onde estao, em que condicao, o que
+  // precisa acontecer. NAO ve receita RED, repasse nem pagamento — a area de
+  // Operacao responde por movimento de ativo, nao por dinheiro.
+  OPERACAO: "operacao",
   // Vendas, calculos, custos, repasses e pagamentos.
   FINANCEIRO: "financeiro",
   FORNECEDOR: "fornecedor",
@@ -24,6 +28,17 @@ const CAPABILITIES = {
   COMMERCIAL_WRITE: "commercial_write",
   FINANCIAL_READ: "financial_read",
   FINANCIAL_WRITE: "financial_write",
+  /**
+   * Operacao — inventario e fluxo fisico.
+   *
+   * Capacidade PROPRIA, nao um subconjunto da comercial: o cliente pediu
+   * quatro areas com acesso recortado (Master | Comercial | Operacao |
+   * Financeiro), e reaproveitar `commercial_read` daria ao perfil de Operacao
+   * a tabela de ativos com potencial de receita da RED ao lado — exatamente o
+   * dado que ele nao deve ver.
+   */
+  OPERATION_READ: "operation_read",
+  OPERATION_WRITE: "operation_write",
   ADMIN_READ: "admin_read",
   ADMIN_WRITE: "admin_write",
 };
@@ -32,6 +47,7 @@ const CAPS_POR_PAPEL = {
   admin: Object.values(CAPABILITIES),
   curador: [CAPABILITIES.COMMERCIAL_READ, CAPABILITIES.COMMERCIAL_WRITE],
   comercial: [CAPABILITIES.COMMERCIAL_READ, CAPABILITIES.COMMERCIAL_WRITE],
+  operacao: [CAPABILITIES.OPERATION_READ, CAPABILITIES.OPERATION_WRITE],
   financeiro: [CAPABILITIES.FINANCIAL_READ, CAPABILITIES.FINANCIAL_WRITE],
   fornecedor: [],
   comprador: [],
@@ -147,6 +163,77 @@ const ROTULO_MODELO_COMERCIAL = {
   [MODELOS_COMERCIAIS.CATALOGO]: "RED Catálogo",
   [MODELOS_COMERCIAIS.PROPRIO]: "Ativo Próprio RED",
 };
+
+/**
+ * ------------------------------------------------------------------ OPERACAO
+ *
+ * Vocabulario do inventario e do fluxo fisico. Vive aqui, e nao no service,
+ * porque tres consumidores dependem dele: a API, a tabela do painel e o
+ * filtro que a tela oferece — e um rotulo divergente entre eles transforma o
+ * filtro numa opcao que nunca devolve linha.
+ */
+
+/**
+ * Quais status do ciclo de vida compoem o INVENTARIO sob gestao.
+ *
+ * `aprovado` e `publicado`, e so. A razao:
+ *   - rascunho / em_avaliacao — o ativo ainda nao passou pela curadoria e nao
+ *     tem preco autorizado; somar o "valor anunciado" deles seria anunciar um
+ *     numero que o dono nao aprovou. Esse funil e do Comercial.
+ *   - vendido — saiu do inventario. Continua no painel de Operacao apenas
+ *     enquanto houver retirada pendente, e por outra porta (ver
+ *     STATUS_OPERACIONAL.AGUARDANDO_RETIRADA).
+ *   - inativo — foi retirado de circulacao de proposito.
+ */
+const INVENTARIO_STATUS = [ASSET_STATUS.APROVADO, ASSET_STATUS.PUBLICADO];
+
+/**
+ * Status OPERACIONAL do ativo.
+ *
+ * Nao e o status do ciclo de vida repetido com outro nome: responde a pergunta
+ * fisica — de quem esta a guarda, ha saldo, e alguem precisa mover isto hoje?
+ * Um ativo `publicado` pode estar em guarda da RED, reservado, sem saldo ou
+ * com retirada pendente, e o ciclo de vida chama tudo isso de "publicado".
+ *
+ * E derivado, nao gravado: sai de status + modelo comercial + saldo +
+ * disponibilidade + retiradas pendentes. Nao ha coluna nova nem migracao —
+ * toda a informacao ja existe, faltava a leitura.
+ */
+const STATUS_OPERACIONAL = {
+  AGUARDANDO_RETIRADA: "aguardando_retirada",
+  PRONTO_PARA_PUBLICAR: "pronto_para_publicar",
+  SEM_SALDO: "sem_saldo",
+  RESERVADO: "reservado",
+  EM_GUARDA_RED: "em_guarda_red",
+  EM_CATALOGO: "em_catalogo",
+  SAIU_DO_INVENTARIO: "saiu_do_inventario",
+};
+
+const ROTULO_STATUS_OPERACIONAL = {
+  [STATUS_OPERACIONAL.AGUARDANDO_RETIRADA]: "Aguardando retirada",
+  [STATUS_OPERACIONAL.PRONTO_PARA_PUBLICAR]: "Pronto para publicar",
+  [STATUS_OPERACIONAL.SEM_SALDO]: "Sem saldo disponível",
+  [STATUS_OPERACIONAL.RESERVADO]: "Reservado",
+  [STATUS_OPERACIONAL.EM_GUARDA_RED]: "Em guarda da RED",
+  [STATUS_OPERACIONAL.EM_CATALOGO]: "No fornecedor",
+  [STATUS_OPERACIONAL.SAIU_DO_INVENTARIO]: "Saiu do inventário",
+};
+
+/**
+ * Prazo para a retirada sair do "aguardando" antes de virar pendencia.
+ *
+ * E um limite operacional, nao regra contratual: passados estes dias sem
+ * agendamento, a venda esta parada e alguem tem de ligar para o comprador.
+ */
+const SLA_RETIRADA_DIAS = 7;
+
+/**
+ * A partir de quantos dias um ativo em inventario conta como estoque longo.
+ *
+ * 90 dias porque e o mesmo horizonte dos atalhos de periodo do painel — ter
+ * dois limites diferentes para "muito tempo" obrigaria a explicar qual e qual.
+ */
+const ESTOQUE_LONGO_DIAS = 90;
 
 /** Modalidade de venda. "consulta" nunca gera pedido direto — gera cotacao. */
 const MODALIDADES = { DIRETA: "direta", CONSULTA: "consulta" };
@@ -350,6 +437,11 @@ module.exports = {
   ASSET_TRANSICOES,
   MODELOS_COMERCIAIS,
   ROTULO_MODELO_COMERCIAL,
+  INVENTARIO_STATUS,
+  STATUS_OPERACIONAL,
+  ROTULO_STATUS_OPERACIONAL,
+  SLA_RETIRADA_DIAS,
+  ESTOQUE_LONGO_DIAS,
   MODALIDADES,
   SUBMISSION_STATUS,
   ORDER_STATUS,

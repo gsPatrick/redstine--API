@@ -3,10 +3,13 @@
 const service = require("./management.service");
 const comercial = require("./management.comercial");
 const financeiro = require("./management.financeiro");
+const operacao = require("./management.operacao");
 const relatorios = require("./management.relatorios");
 const settings = require("../settings/settings.service");
 const { catchAsync } = require("../../utils/catch-async");
 const { ok, paginated } = require("../../utils/http-response");
+const { capacidadesDe } = require("../../middlewares/capability");
+const { CAPABILITIES } = require("../../config/constants");
 
 const ator = (req) => ({ id: req.user.id, role: req.user.role });
 const lista = (res, r, extra = {}) =>
@@ -24,7 +27,17 @@ const lista = (res, r, extra = {}) =>
   });
 
 // ---------------------------------------------------------------- Visão Geral
-const visaoGeral = catchAsync(async (req, res) => ok(res, await service.visaoGeral(req.query)));
+/**
+ * As capacidades vao para o service, nao ficam so na rota.
+ *
+ * A Visao Geral e a unica rota que TRES areas partilham, e por isso o corte
+ * nao pode ser por rota: e o conteudo do payload que muda por perfil. Passar a
+ * lista aqui e o que impede o perfil Comercial de receber receita da RED
+ * dentro de um objeto que ele tem direito de pedir.
+ */
+const visaoGeral = catchAsync(async (req, res) =>
+  ok(res, await service.visaoGeral(req.query, capacidadesDe(req.user)))
+);
 
 // ------------------------------------------------------------------ Comercial
 const painelComercial = catchAsync(async (req, res) => ok(res, await service.comercial(req.query)));
@@ -35,6 +48,18 @@ const resumoConsultas = catchAsync(async (req, res) =>
 const ativos = catchAsync(async (req, res) => lista(res, await comercial.ativos(req.query)));
 const vendas = catchAsync(async (req, res) => lista(res, await comercial.vendas(req.query)));
 const resumoVendas = catchAsync(async (req, res) => ok(res, await comercial.resumoDeVendas(req.query)));
+
+// ------------------------------------------------------------------- Operação
+const painelOperacao = catchAsync(async (req, res) =>
+  ok(res, await operacao.indicadores(req.query))
+);
+const ativosOperacao = catchAsync(async (req, res) => lista(res, await operacao.ativos(req.query)));
+const ativoOperacional = catchAsync(async (req, res) =>
+  ok(res, await operacao.detalhe(req.params.id))
+);
+const inventarioPorCategoria = catchAsync(async (req, res) =>
+  ok(res, await operacao.inventarioPorCategoria(req.query))
+);
 
 // ------------------------------------------------------------------ Financeiro
 const painelFinanceiro = catchAsync(async (req, res) => ok(res, await service.financeiro(req.query)));
@@ -49,7 +74,14 @@ const repasses = catchAsync(async (req, res) => lista(res, await financeiro.repa
 
 // ------------------------------------------------------------------ Relatórios
 const evolucao = catchAsync(async (req, res) =>
-  ok(res, await relatorios.evolucaoDeVendas(req.query))
+  ok(
+    res,
+    await relatorios.evolucaoDeVendas(req.query, {
+      // A receita da RED por mes so acompanha a serie para quem tem capacidade
+      // financeira. A rota e comercial, e o campo passava na boleia.
+      comFinanceiro: capacidadesDe(req.user).includes(CAPABILITIES.FINANCIAL_READ),
+    })
+  )
 );
 const porCategoria = catchAsync(async (req, res) =>
   ok(res, await relatorios.vendasPorCategoria(req.query))
@@ -89,6 +121,10 @@ module.exports = {
   ativos,
   vendas,
   resumoVendas,
+  painelOperacao,
+  ativosOperacao,
+  ativoOperacional,
+  inventarioPorCategoria,
   painelFinanceiro,
   indicadores,
   movimentacoes,
