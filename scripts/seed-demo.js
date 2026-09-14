@@ -111,28 +111,47 @@ async function main() {
    * potencial de milhoes — exatamente o erro que a curadoria precisa evitar no
    * cadastro real.
    */
+  /**
+   * As localizacoes deixaram de ser texto no seed.
+   *
+   * Antes havia aqui "Rio de Janeiro — RJ", "Pilares/RJ", "Belo Horizonte —
+   * MG", "Curitiba — PR" e "Salvador — BA" — cinco grafias, tres cidades sem
+   * opcao na lista. Era o seed a reproduzir o problema que a lista fechada
+   * veio resolver. Agora cada linha aponta o SLUG da localizacao, o mesmo
+   * caminho que o formulario de cadastro usa, e o que nao cabe nas duas
+   * opcoes fica sem localizacao — nao se inventa cidade nem no seed.
+   */
+  const locais = Object.fromEntries(
+    (await db.Location.findAll()).map((l) => [l.slug, l])
+  );
+  if (!locais["rio-de-janeiro-rj"]) {
+    throw new Error("Localizacoes ausentes. Corra `npm run seed` antes do seed:demo.");
+  }
+
   const catalogo = [
-    { nome: "Lote de Tubos PVC Tigre", preco: 13.5, mercado: 27, qtd: 900, orig: 1000, forma: "lote", modelo: MODELOS_COMERCIAIS.CATALOGO, status: ASSET_STATUS.PUBLICADO, local: "Rio de Janeiro — RJ", condicao: "sem_uso" },
-    { nome: "Conexões PVC Tigre", preco: 20.6, mercado: 37.5, qtd: 400, orig: 400, forma: "conjunto", modelo: MODELOS_COMERCIAIS.ESTOQUE, status: ASSET_STATUS.PUBLICADO, local: "Belo Horizonte — MG", condicao: "seminovo" },
-    { nome: "Registros PVC", preco: 8, mercado: 14, qtd: 300, orig: 300, forma: "unidade", modelo: MODELOS_COMERCIAIS.CATALOGO, status: ASSET_STATUS.EM_AVALIACAO, local: "Salvador — BA", condicao: "usado_bom" },
+    { nome: "Lote de Tubos PVC Tigre", preco: 13.5, mercado: 27, qtd: 900, orig: 1000, forma: "lote", modelo: MODELOS_COMERCIAIS.CATALOGO, status: ASSET_STATUS.PUBLICADO, local: "rio-de-janeiro-rj", condicao: "sem_uso" },
+    { nome: "Conexões PVC Tigre", preco: 20.6, mercado: 37.5, qtd: 400, orig: 400, forma: "conjunto", modelo: MODELOS_COMERCIAIS.ESTOQUE, status: ASSET_STATUS.PUBLICADO, local: "sao-paulo-sp", condicao: "seminovo" },
+    { nome: "Registros PVC", preco: 8, mercado: 14, qtd: 300, orig: 300, forma: "unidade", modelo: MODELOS_COMERCIAIS.CATALOGO, status: ASSET_STATUS.EM_AVALIACAO, local: "rio-de-janeiro-rj", condicao: "usado_bom" },
     // Um ativo no modelo PROPRIO: sem ele nenhuma tela da gestao mostrava a
     // terceira linha do relatorio por modelo, e o 0%/100% so aparecia depois
     // de alguem cadastrar acervo proprio a mao.
-    { nome: "Painéis Divisórios RED", preco: 150, mercado: 320, qtd: 12, orig: 12, forma: "unidade", modelo: MODELOS_COMERCIAIS.PROPRIO, status: ASSET_STATUS.PUBLICADO, local: "Pilares/RJ", condicao: "seminovo", daRed: true },
-    { nome: "Luva Soldável 25mm", preco: 3.2, mercado: 5.8, qtd: 0, orig: 500, forma: "conjunto", modelo: MODELOS_COMERCIAIS.CATALOGO, status: ASSET_STATUS.INATIVO, local: "Curitiba — PR", condicao: "usado_sinais" },
+    { nome: "Painéis Divisórios RED", preco: 150, mercado: 320, qtd: 12, orig: 12, forma: "unidade", modelo: MODELOS_COMERCIAIS.PROPRIO, status: ASSET_STATUS.PUBLICADO, local: "rio-de-janeiro-rj", condicao: "seminovo", daRed: true },
+    { nome: "Luva Soldável 25mm", preco: 3.2, mercado: 5.8, qtd: 0, orig: 500, forma: "conjunto", modelo: MODELOS_COMERCIAIS.CATALOGO, status: ASSET_STATUS.INATIVO, local: "sao-paulo-sp", condicao: "usado_sinais" },
     // Os tres seguintes existem para a area de OPERACAO ter pendencia real.
     // Sem eles, "Pendencias operacionais" nascia em zero e a conferencia
     // passava por omissao — que e o modo mais silencioso de um painel mentir.
     //
     // Aprovado e nao publicado: pronto para publicar, a pendencia que a
     // Operacao resolve num clique.
-    { nome: "Grades Metálicas Galvanizadas", preco: 45, mercado: 98, qtd: 60, orig: 60, forma: "conjunto", modelo: MODELOS_COMERCIAIS.ESTOQUE, status: ASSET_STATUS.APROVADO, local: "Pilares/RJ", condicao: "usado_bom" },
-    // Localizacao vazia, que e o estado de mais da metade do acervo real: e
-    // esta linha que faz aparecer a pendencia "ativos sem localizacao" e que
-    // dimensiona o indicador de Localizacoes que ficou em espera.
+    { nome: "Grades Metálicas Galvanizadas", preco: 45, mercado: 98, qtd: 60, orig: 60, forma: "conjunto", modelo: MODELOS_COMERCIAIS.ESTOQUE, status: ASSET_STATUS.APROVADO, local: "rio-de-janeiro-rj", condicao: "usado_bom" },
+    // Sem localizacao — de proposito, e continua a ser de proposito depois da
+    // lista fechada. A lista resolve a AMBIGUIDADE ("Rio/RJ" vs "Rio — RJ"),
+    // nao a AUSENCIA: ha ativo no galpao que ninguem localizou ainda. Esta
+    // linha e a que mantem viva a pendencia "ativos sem localizacao" e a
+    // ultima barra do indicador de Localizacoes.
     { nome: "Portas Corta-Fogo", preco: 380, mercado: 820, qtd: 14, orig: 14, forma: "unidade", modelo: MODELOS_COMERCIAIS.ESTOQUE, status: ASSET_STATUS.PUBLICADO, local: "", condicao: "seminovo" },
     // Publicado com saldo zero: anuncia o que nao ha para entregar.
-    { nome: "Perfis de Alumínio Anodizado", preco: 62, mercado: 130, qtd: 0, orig: 200, forma: "lote", modelo: MODELOS_COMERCIAIS.CATALOGO, status: ASSET_STATUS.PUBLICADO, local: "São Paulo — SP", condicao: "usado_bom" },
+    { nome: "Perfis de Alumínio Anodizado", preco: 62, mercado: 130, qtd: 0, orig: 200, forma: "lote", modelo: MODELOS_COMERCIAIS.CATALOGO, status: ASSET_STATUS.PUBLICADO, local: "sao-paulo-sp", condicao: "usado_bom" },
   ];
 
   const ativos = [];
@@ -152,7 +171,8 @@ async function main() {
       name: a.nome,
       shortDescription: `${a.nome} — lote disponível para retirada.`,
       condition: a.condicao,
-      location: a.local,
+      locationId: a.local ? locais[a.local].id : null,
+      location: a.local ? locais[a.local].name : null,
       originalQuantity: a.orig,
       quantity: a.qtd,
       unit: "unidade",

@@ -84,6 +84,153 @@ ok("Mas o novo padrão vale para o potencial dos ativos ainda não vendidos",
 
 await chamar("PATCH","/management/settings",admin,{ "split.catalogo.fornecedor": 65 });
 
+/**
+ * LOCALIZAÇÃO — a lista fechada.
+ *
+ * O que estas verificações protegem não é a existência da tabela: é a
+ * PROMESSA. Uma lista fechada que aceita texto livre por uma porta lateral não
+ * é uma lista fechada, é um campo de texto com um select por cima — e foi
+ * exatamente assim que a base ficou com "Rio de Janeiro/RJ" e "Rio de Janeiro
+ * — RJ" a designarem o mesmo lugar.
+ */
+console.log("\n== LOCALIZAÇÃO (lista fechada) ==");
+
+const locais = (await chamar("GET","/locations")).json.data;
+ok("A lista de localizações é pública e traz as duas opções decididas",
+   Array.isArray(locais) && locais.some(l=>l.name==="Rio de Janeiro - RJ") && locais.some(l=>l.name==="São Paulo - SP"),
+   JSON.stringify((locais||[]).map(l=>l.name)));
+
+const catParaAtivo = (await chamar("GET","/catalog/categories")).json.data[0];
+const rio = locais.find(l=>l.slug==="rio-de-janeiro-rj");
+
+// 1. Texto livre não entra mais. Este é o teste central da tarefa.
+const textoLivre = await chamar("POST","/assets",admin,{
+  name:"[smoke] localização por texto livre", categoryId:catParaAtivo.id, location:"Rio de Janeiro/RJ",
+});
+ok("Cadastrar ativo com localização em TEXTO LIVRE é recusado",
+   textoLivre.status===422 || textoLivre.status===400, `(veio ${textoLivre.status})`);
+
+// 2. Um id que não está na lista também não.
+const idInvalido = await chamar("POST","/assets",admin,{
+  name:"[smoke] localização inexistente", categoryId:catParaAtivo.id,
+  locationId:"00000000-0000-0000-0000-000000000000",
+});
+ok("Cadastrar ativo com localização fora da lista é recusado",
+   idInvalido.status===400 || idInvalido.status===422, `(veio ${idInvalido.status})`);
+
+// 3. O caminho feliz, e a prova de que o RÓTULO vem da tabela e não do corpo.
+const comLocal = await chamar("POST","/assets",admin,{
+  name:"[smoke] ativo com localização da lista", categoryId:catParaAtivo.id, locationId:rio.id,
+});
+ok("Cadastrar ativo escolhendo da lista funciona", comLocal.status===201, `(veio ${comLocal.status})`);
+ok("O rótulo gravado vem da tabela, não do que o cliente mandou",
+   comLocal.json?.data?.location === "Rio de Janeiro - RJ" && comLocal.json?.data?.locationId === rio.id,
+   JSON.stringify({location:comLocal.json?.data?.location, locationId:comLocal.json?.data?.locationId}));
+
+// 4. Sem localização continua a ser um estado legítimo — é a pendência.
+const semLocal = await chamar("POST","/assets",admin,{
+  name:"[smoke] ativo sem localização", categoryId:catParaAtivo.id,
+});
+ok("Ativo SEM localização continua a poder ser cadastrado (é pendência, não erro)",
+   semLocal.status===201 && semLocal.json.data.locationId === null, `(veio ${semLocal.status})`);
+
+// 5. Limpar a localização de um ativo.
+const limpou = await chamar("PATCH",`/assets/${comLocal.json.data.id}`,admin,{ locationId:null });
+ok("Limpar a localização de um ativo funciona",
+   limpou.status===200 && limpou.json.data.locationId===null && !limpou.json.data.location,
+   JSON.stringify({location:limpou.json?.data?.location}));
+
+// 6. Um PATCH que não fala de localização não pode apagá-la por omissão.
+await chamar("PATCH",`/assets/${comLocal.json.data.id}`,admin,{ locationId:rio.id });
+const soPreco = await chamar("PATCH",`/assets/${comLocal.json.data.id}`,admin,{ price: 123 });
+ok("PATCH sem `locationId` NÃO apaga a localização do ativo",
+   soPreco.json?.data?.locationId === rio.id, JSON.stringify({locationId:soPreco.json?.data?.locationId}));
+
+// 7. Quem adiciona a terceira cidade é a RED, pelo painel — sem deploy.
+const terceira = await chamar("POST","/locations",admin,{ city:"[smoke] Nova Cidade", uf:"mg" });
+ok("A RED cria a terceira localização pelo painel", terceira.status===201, `(veio ${terceira.status})`);
+ok("O rótulo canónico sai de Cidade - UF, com a UF em maiúsculas",
+   terceira.json?.data?.name === "[smoke] Nova Cidade - MG" && terceira.json?.data?.uf === "MG",
+   JSON.stringify({name:terceira.json?.data?.name, uf:terceira.json?.data?.uf}));
+
+// 8. E ela passa a estar disponível para o cadastro no mesmo instante.
+const naNovaCidade = await chamar("POST","/assets",admin,{
+  name:"[smoke] ativo na cidade nova", categoryId:catParaAtivo.id, locationId:terceira.json.data.id,
+});
+ok("A cidade recém-criada já pode ser escolhida no cadastro", naNovaCidade.status===201, `(veio ${naNovaCidade.status})`);
+
+// 9. Renomear propaga para os ativos — é a contrapartida de guardar o rótulo
+//    no ativo, e sem ela voltávamos a ter dois textos para o mesmo lugar.
+const renomeou = await chamar("PATCH",`/locations/${terceira.json.data.id}`,admin,{ name:"[smoke] Cidade Renomeada - MG" });
+ok("Renomear a localização funciona", renomeou.status===200, `(veio ${renomeou.status})`);
+const ativoRenomeado = (await chamar("GET",`/assets/admin/${naNovaCidade.json.data.id}`,admin)).json.data;
+ok("Renomear REETIQUETA os ativos dessa localização — o rótulo não se desencontra da tabela",
+   ativoRenomeado.location === "[smoke] Cidade Renomeada - MG", JSON.stringify({location:ativoRenomeado.location}));
+
+// 10. Desativar tira do formulário sem apagar histórico.
+await chamar("PATCH",`/locations/${terceira.json.data.id}`,admin,{ active:false });
+const vigentes = (await chamar("GET","/locations")).json.data;
+ok("Localização desativada sai da lista oferecida",
+   !vigentes.some(l=>l.id===terceira.json.data.id));
+const emInativa = await chamar("POST","/assets",admin,{
+  name:"[smoke] ativo em localização inativa", categoryId:catParaAtivo.id, locationId:terceira.json.data.id,
+});
+ok("E não pode ser atribuída a um ativo novo", emInativa.status===400 || emInativa.status===422, `(veio ${emInativa.status})`);
+const aindaLa = (await chamar("GET",`/assets/admin/${naNovaCidade.json.data.id}`,admin)).json.data;
+ok("Mas o ativo que já estava lá mantém a localização — desativar não apaga histórico",
+   aindaLa.locationId === terceira.json.data.id);
+
+// 11. A escrita é da RED. Um fornecedor não mexe na lista.
+const fornEscreve = await chamar("POST","/locations",forn,{ city:"[smoke] Cidade do Fornecedor", uf:"SP" });
+ok("Fornecedor NÃO cria localização", fornEscreve.status===403, `(veio ${fornEscreve.status})`);
+
+// 12. O indicador de Localizações do painel Operação — o que estava bloqueado.
+const op = (await chamar("GET","/management/operation",admin)).json.data;
+ok("O painel Operação devolve a distribuição por localização",
+   Array.isArray(op.localizacoes) && op.localizacoes.length >= 3,
+   JSON.stringify((op.localizacoes||[]).map(l=>l.rotulo)));
+ok("A distribuição inclui a linha 'Sem localização' — o que falta é medido, não escondido",
+   op.localizacoes.some(l=>l.id===null && l.rotulo==="Sem localização"));
+ok("A soma da distribuição bate com o inventário — nenhum ativo fica fora do gráfico",
+   op.localizacoes.reduce((a,l)=>a+l.ativos,0) === op.inventario.registros,
+   `(${op.localizacoes.reduce((a,l)=>a+l.ativos,0)} vs ${op.inventario.registros})`);
+ok("Localizações deixou de estar na lista de pendentes de definição",
+   !op.pendentesDeDefinicao.some(p=>p.chave==="localizacoes"),
+   JSON.stringify(op.pendentesDeDefinicao.map(p=>p.chave)));
+ok("Mas 'Aguardando entrada' continua lá — esse ainda depende de decisão do cliente",
+   op.pendentesDeDefinicao.some(p=>p.chave==="aguardandoEntrada"));
+
+// 13. O filtro por localização da Operação, que estava em espera.
+const filtrado = (await chamar("GET",`/management/operation/assets?location=${rio.id}`,admin)).json;
+ok("A Operação filtra a tabela por localização",
+   filtrado.status !== 422 && filtrado.data.every(a=>a.local === "Rio de Janeiro - RJ"),
+   JSON.stringify((filtrado.data||[]).map(a=>a.local).slice(0,4)));
+const semLocalFiltro = (await chamar("GET","/management/operation/assets?location=sem",admin)).json;
+ok("E filtra pelos ativos SEM localização, que é onde se clica a pendência",
+   (semLocalFiltro.data||[]).every(a=>!a.local),
+   JSON.stringify((semLocalFiltro.data||[]).map(a=>a.local).slice(0,4)));
+
+// 14. O catálogo público — o que não podia quebrar.
+const catalogoPub = await chamar("GET","/assets?perPage=1");
+const opcoes = catalogoPub.json.meta.filtros.location;
+ok("O painel de filtros do catálogo continua a devolver localizações",
+   Array.isArray(opcoes) && opcoes.length > 0 && opcoes.every(o=>"value" in o && "label" in o && "count" in o),
+   JSON.stringify(opcoes));
+ok("E só oferece rótulos da lista fechada — nenhuma grafia solta sobreviveu",
+   opcoes.every(o=>locais.some(l=>l.name===o.value) || o.value==="[smoke] Cidade Renomeada - MG"),
+   JSON.stringify(opcoes.map(o=>o.value)));
+const porLocal = await chamar("GET",`/assets?location=${encodeURIComponent("Rio de Janeiro - RJ")}`);
+ok("Clicar na opção do filtro devolve exatamente os ativos daquele local",
+   porLocal.status===200 && porLocal.json.data.length>0 && porLocal.json.data.every(a=>a.location==="Rio de Janeiro - RJ"),
+   `(${porLocal.json.data?.length} ativos)`);
+// A contagem da opcao conta so o que ainda tem saldo (regra do painel de
+// filtros: marca de ativo esgotado sai do filtro), entao ela e um SUBCONJUNTO
+// da listagem, que mantem o esgotado visivel. O que nao pode acontecer e a
+// opcao prometer mais do que o clique entrega.
+ok("A contagem ao lado da opção nunca promete mais do que o clique devolve",
+   opcoes.find(o=>o.value==="Rio de Janeiro - RJ")?.count <= porLocal.json.meta.total,
+   `(${porLocal.json.meta?.total} vs ${opcoes.find(o=>o.value==="Rio de Janeiro - RJ")?.count})`);
+
 // Filtros temporais
 const a = (await chamar("GET","/management/overview?periodo=7d",admin)).json.data;
 const b = (await chamar("GET","/management/overview?periodo=12m",admin)).json.data;

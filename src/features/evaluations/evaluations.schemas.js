@@ -27,7 +27,14 @@ const avaliarSchema = z
     categoryId: z.string().uuid().optional(),
     subcategoryId: z.string().uuid().optional(),
     condition: z.enum(CONDICOES).optional(),
-    location: z.string().max(140).optional(),
+    /**
+     * Localização por ID (lista fechada). Antes era texto livre e, pior, caía
+     * em `submission.city` — a cidade que o fornecedor digitou no envio. Era
+     * essa a porta por onde entrava "Pilares" na base. O curador escolhe da
+     * lista; se não escolher, o ativo nasce sem localização e aparece na
+     * pendência operacional, que é honesto.
+     */
+    locationId: z.string().uuid().nullable().optional(),
     quantity: z.coerce.number().int().min(0).optional(),
     unit: z.string().max(30).optional(),
     saleMode: z.nativeEnum(MODALIDADES).optional(),

@@ -45,6 +45,12 @@ const CATALOGO = [
 
 const { slugify } = require("../src/utils/slug");
 
+/** Lista FECHADA de localizacoes. A RED acrescenta a terceira pelo painel. */
+const LOCALIZACOES = [
+  { slug: "rio-de-janeiro-rj", name: "Rio de Janeiro - RJ", city: "Rio de Janeiro", uf: "RJ" },
+  { slug: "sao-paulo-sp", name: "São Paulo - SP", city: "São Paulo", uf: "SP" },
+];
+
 async function main() {
   await db.sequelize.authenticate();
 
@@ -61,6 +67,21 @@ async function main() {
     },
   });
   console.log(criado ? `[seed] admin criado: ${admin.email}` : `[seed] admin ja existia: ${admin.email}`);
+
+  /**
+   * As duas localizacoes da lista fechada (decisao do cliente, 12/09).
+   *
+   * Entram no seed base, e nao no de demonstracao, porque sem elas o cadastro
+   * de ativo nao tem o que oferecer — uma plataforma recem-instalada ficaria
+   * com o campo de localizacao vazio e sem forma de o preencher.
+   */
+  for (const [i, l] of LOCALIZACOES.entries()) {
+    const [local, novo] = await db.Location.findOrCreate({
+      where: { slug: l.slug },
+      defaults: { ...l, position: i + 1 },
+    });
+    console.log(novo ? `[seed] localizacao criada: ${local.name}` : `[seed] localizacao ja existia: ${local.name}`);
+  }
 
   for (const [i, cat] of CATALOGO.entries()) {
     const [categoria] = await db.Category.findOrCreate({

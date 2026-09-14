@@ -66,6 +66,10 @@ const CONTRATO = [
   // lista (que opcoes ainda tem acervo), nao um item dela.
   ["Comprar / painel de filtros", "/assets?perPage=1", (d, meta) => meta.filtros, ["brand","location","condition","saleFormat","availability","category"]],
   ["Comprar / opção de filtro", "/assets?perPage=1", (d, meta) => meta.filtros?.location?.[0], ["value","label","count"]],
+  // A lista fechada de localizacoes: o formulario de cadastro e o filtro leem
+  // daqui. Se esta rota parar de devolver `name`, o campo de localizacao do
+  // cadastro fica com um select de opcoes em branco.
+  ["Localizações / lista fechada", "/locations", (d) => primeira(d), ["id","slug","name","city","uf","position","active"]],
   ["Comprar / card", "/assets?perPage=1", (d) => primeira(d), ["id","slug","name","price","regularPrice","onSale","images","categories","condition","brand","location","quantity","unit","inStock","attributes","commercialModel","views"]],
   ["Enviar Ativos / categorias", "/catalog/categories", (d) => primeira(d), ["id","name","subcategorias"]],
 ];
@@ -90,7 +94,7 @@ const CONTRATO_GESTAO = [
   ["Gestão Pedido / conclusão", "__conclusao__", (d) => d, ["concluida","pode","condicoes"]],
   ["Gestão Categorias / categoria", "/catalog/categories", (d) => primeira(d), ["id","name","slug","subcategorias"]],
   ["Gestão Relatórios / por fornecedor", "/management/reports/by-supplier?periodo=tudo", (d) => primeira(d), ["fornecedor","operacoes","valorBruto","repasse","receitaRed"]],
-  ["Gestão Ativo / edição", "__ativo__", (d) => d, ["id","name","sku","slug","shortDescription","description","categoryId","subcategoryId","condition","location","brand","material","color","size","quantity","originalQuantity","unit","price","marketPrice","saleMode","saleFormat","availability","commercialModel","featured","attributes","status","imagens","publishedAt","supplierApprovedAt","createdAt","updatedAt"]],
+  ["Gestão Ativo / edição", "__ativo__", (d) => d, ["id","name","sku","slug","shortDescription","description","categoryId","subcategoryId","condition","location","locationId","brand","material","color","size","quantity","originalQuantity","unit","price","marketPrice","saleMode","saleFormat","availability","commercialModel","featured","attributes","status","imagens","publishedAt","supplierApprovedAt","createdAt","updatedAt"]],
   ["Gestão Ativo / imagem", "__ativo__", (d) => d.imagens?.[0], ["id","url","position"]],
   ["Gestão Envios / linha", "/submissions", (d) => primeira(d), ["id","reference","assetType","approximateQuantity","company","name","email","city","photos","status","createdAt"]],
   ["Gestão Envio / detalhe", "__envio__", (d) => d, ["id","reference","assetType","description","approximateQuantity","notes","photos","attributes","city","name","company","email","phone","supplierId","status","createdAt","avaliacoes"]],
@@ -107,8 +111,11 @@ const CONTRATO_GESTAO = [
   ["Operação / aguardando retirada", "/management/operation", (d) => d.aguardandoRetirada, ["itens","ativos","unidades","valor","atrasados","valorAtrasado","slaDias"]],
   ["Operação / tempo em estoque", "/management/operation", (d) => d.tempoEmEstoque, ["mediaDias","medianaDias","limiteLongoDias","acimaDoLimite","referencia"]],
   ["Operação / pendências", "/management/operation", (d) => d.pendencias, ["prontosParaPublicar","retiradasAtrasadas","semLocalizacao","publicadoSemSaldo","total"]],
+  // O indicador que esteve bloqueado enquanto a localizacao era texto livre.
+  ["Operação / localizações", "/management/operation", (d) => d.localizacoes?.[0], ["id","rotulo","ativos","unidades"]],
   ["Operação / gráfico por categoria", "/management/operation", (d) => d.graficos?.inventarioPorCategoria?.[0], ["rotulo","valor","registros","unidades","percentual","cor"]],
-  // Os dois indicadores em espera vem declarados no payload de proposito: a
+  // O indicador em espera (so sobrou "Aguardando entrada") vem declarado no
+  // payload de proposito: a
   // tela le esta lista para nao inventar um cartao vazio, e quem for
   // implementar sabe onde entra. Se o contrato deixar de a devolver, a
   // informacao de que falta algo desaparece em silencio.

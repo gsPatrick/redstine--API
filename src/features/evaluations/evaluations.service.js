@@ -6,6 +6,7 @@ const { slugUnico } = require("../../utils/slug");
 const mailer = require("../../providers/mailer");
 const audit = require("../audit/audit.service");
 const notificacoes = require("../notifications/notifications.service");
+const localizacoes = require("../locations/locations.service");
 const {
   SUBMISSION_STATUS,
   ASSET_STATUS,
@@ -75,6 +76,10 @@ async function avaliar(submissionId, dados, { curatorId }) {
     const categoria = await db.Category.findByPk(dados.categoryId, { transaction: t });
     if (!categoria) throw AppError.badRequest("Categoria invalida.", "CATEGORY_INVALID");
 
+    // Lista fechada: valida antes de criar, para o erro sair como 400 em vez
+    // de rebentar no meio da transacao.
+    const local = await localizacoes.resolver(dados.locationId);
+
     const nome = dados.name || submission.assetType || submission.description.slice(0, 120);
     const slug = await slugUnico(db.Asset, nome);
 
@@ -88,7 +93,7 @@ async function avaliar(submissionId, dados, { curatorId }) {
         categoryId: dados.categoryId,
         subcategoryId: dados.subcategoryId,
         condition: dados.condition,
-        location: dados.location || submission.city,
+        ...local,
         quantity: dados.quantity ?? 1,
         unit: dados.unit || "unidade",
         price: dados.recommendedPrice,

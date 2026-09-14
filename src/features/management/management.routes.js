@@ -44,6 +44,9 @@ const ativosQuery = z.object({
   commercialModel: z.nativeEnum(MODELOS_COMERCIAIS).optional(),
   supplierId: z.string().uuid().optional(),
   category: z.string().trim().optional(),
+  // Na lista de ativos do Comercial o valor continua a ser o rotulo, porque e
+  // o que a tabela mostra e o que o gestor copia. A lista fechada ja garante
+  // que ha um numero finito de rotulos possiveis.
   location: z.string().trim().optional(),
   search: z.string().trim().min(1).max(120).optional(),
 });
@@ -59,15 +62,24 @@ const vendasQuery = z.object({
 /**
  * Filtros da Operacao.
  *
- * Sem `location`: o filtro por localizacao esta em espera ate `assets.location`
- * virar lista fechada. Aceita-lo hoje entregaria um filtro que nao encontra
- * "Rio de Janeiro/RJ" quando o utilizador escolhe "Rio de Janeiro — RJ".
- * `search` cobre o caso urgente, porque busca por texto nao promete exatidao.
+ * `location` esteve em espera enquanto `assets.location` era texto livre —
+ * aceita-lo entao entregaria um filtro que nao encontrava "Rio de Janeiro/RJ"
+ * quando o utilizador escolhia "Rio de Janeiro — RJ". Com a lista fechada o
+ * filtro existe e compara ID, nao texto.
+ *
+ * O valor e o UUID da localizacao ou a palavra `sem`, para o recorte dos
+ * ativos sem localizacao registada — que e onde o gestor clica quando ve a
+ * pendencia e quer a lista por tras do numero.
  */
+const localizacaoFiltro = z
+  .union([z.literal("sem"), z.string().uuid()])
+  .optional();
+
 const operacaoQuery = z.object({
   ...periodo,
   commercialModel: z.nativeEnum(MODELOS_COMERCIAIS).optional(),
   category: z.string().trim().optional(),
+  location: localizacaoFiltro,
   supplierId: z.string().uuid().optional(),
 });
 

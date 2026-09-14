@@ -24,6 +24,19 @@ module.exports = (sequelize) => {
       subcategoryId: { type: DataTypes.UUID },
 
       condition: { type: DataTypes.ENUM(...CONDICOES) },
+      /**
+       * Localização — lista FECHADA (decisão do cliente, 12/09).
+       *
+       * `locationId` é a verdade; `location` é o RÓTULO desnormalizado da
+       * linha de `locations`, escrito só pelo `locations.service`. A coluna de
+       * texto sobrevive porque o catálogo público, a busca, o `meta.filtros` e
+       * as exportações a leem como string em consultas `raw` — e trocar isso
+       * por um JOIN não tornaria nenhum resultado mais correto.
+       *
+       * Nulo é um valor legítimo: "sem localização" é medido como pendência
+       * operacional, não disfarçado de cidade.
+       */
+      locationId: { type: DataTypes.UUID, allowNull: true },
       location: { type: DataTypes.STRING(140) },
       brand: { type: DataTypes.STRING(120) },
       material: { type: DataTypes.STRING(120) },
@@ -113,6 +126,7 @@ module.exports = (sequelize) => {
         { fields: ["category_id"] },
         { fields: ["subcategory_id"] },
         { fields: ["supplier_id"] },
+        { fields: ["location_id"] },
         { fields: ["featured"] },
       ],
       scopes: {
@@ -136,6 +150,7 @@ module.exports = (sequelize) => {
     Asset.belongsTo(models.User, { as: "fornecedor", foreignKey: "supplierId" });
     Asset.belongsTo(models.Category, { as: "categoria", foreignKey: "categoryId" });
     Asset.belongsTo(models.Subcategory, { as: "subcategoria", foreignKey: "subcategoryId" });
+    Asset.belongsTo(models.Location, { as: "localizacao", foreignKey: "locationId" });
     Asset.hasMany(models.AssetImage, {
       as: "imagens",
       foreignKey: "assetId",

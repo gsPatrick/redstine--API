@@ -6,6 +6,7 @@ const { parsePagination } = require("../../utils/pagination");
 const { AppError } = require("../../utils/app-error");
 const { NOME_MODELO, ROTULO_ASSET } = require("../me/me.painel");
 const { cent } = require("./management.comercial");
+const localizacoes = require("../locations/locations.service");
 const {
   ASSET_STATUS,
   ORDER_STATUS,
@@ -35,16 +36,16 @@ const {
  * esta. Por isso os indicadores ignoram o filtro de periodo, e so a TABELA o
  * usa (para recortar o que entrou no inventario na janela).
  *
- * Dois indicadores que o cliente pediu NAO estao aqui, de proposito:
+ * LOCALIZACOES ja esta aqui. Esteve bloqueado enquanto `assets.location` era
+ * texto livre — "Rio de Janeiro/RJ" e "Rio de Janeiro — RJ" eram o mesmo lugar
+ * em dois registos, e distribuir por local em cima disso produzia um grafico
+ * errado com cara de certo. Com a lista fechada (`locations`, decisao do
+ * cliente de 12/09) a distribuicao passou a ser contavel, e e contada por
+ * `location_id`, nao por texto. "Sem localizacao" continua a ser uma linha da
+ * distribuicao E uma pendencia: o ativo existe e ninguem sabe onde esta.
  *
- *   Localizacoes      — `assets.location` e texto livre e esta inconsistente
- *                       ("Rio de Janeiro/RJ" e "Rio de Janeiro — RJ" sao o
- *                       mesmo lugar em dois registos, e mais da metade dos
- *                       ativos tem o campo vazio). Distribuir por local em
- *                       cima disso produziria um grafico errado com cara de
- *                       certo. O lugar esta preparado: ver
- *                       `pendencias.semLocalizacao`, que mede exatamente o
- *                       tamanho do problema, e `pendentesDeDefinicao`.
+ * UM indicador que o cliente pediu ainda NAO esta aqui, de proposito:
+ *
  *   Aguardando entrada — nao existe no ciclo de vida o conceito de "ativo
  *                       recebido fisicamente". Sem saber quem carimba e
  *                       quando, o indicador seria uma contagem de ativos de
@@ -155,6 +156,12 @@ async function recorte(query = {}) {
   const where = {};
   if (query.commercialModel) where.commercialModel = query.commercialModel;
   if (query.supplierId) where.supplierId = query.supplierId;
+  // Filtro por localizacao — possivel agora que a lista e fechada. Compara o
+  // ID, nao o texto: o problema que o bloqueava era exatamente ter dois textos
+  // para o mesmo lugar. `sem` e o recorte dos ativos sem localizacao, que e o
+  // que o gestor quer clicar quando ve a pendencia.
+  if (query.location === "sem") where.locationId = null;
+  else if (query.location) where.locationId = query.location;
   if (query.category) {
     const cat = await db.Category.findOne({ where: { slug: query.category } });
     // Categoria inexistente nao pode devolver o inventario inteiro como se o
@@ -178,21 +185,24 @@ async function indicadores(query = {}) {
   const filtro = await recorte(query);
   const base = { ...NO_INVENTARIO, ...filtro };
 
-  const [inventario, porModelo, tempo, prontos, semLocal, semSaldo, pendencia, categorias] =
+  const [inventario, porModelo, tempo, prontos, semLocal, semSaldo, pendencia, categorias, locais] =
     await Promise.all([
       somaDe(base),
       somaPorModelo(filtro),
       tempoEmEstoque(base),
       db.Asset.count({ where: { ...filtro, status: ASSET_STATUS.APROVADO } }),
-      // O tamanho do problema que bloqueia o indicador de Localizacoes. Fica
-      // como pendencia porque e isso que e: dado operacional em falta.
-      db.Asset.count({
-        where: { ...base, [Op.or]: [{ location: null }, { location: "" }] },
-      }),
+      // Continua a ser pendencia — ja nao porque bloqueia indicador nenhum,
+      // mas porque e dado operacional em falta: ha um ativo e ninguem sabe
+      // onde ele esta. Conta por `location_id`, que e a verdade; o texto ja
+      // nao pode divergir dele.
+      db.Asset.count({ where: { ...base, locationId: null } }),
       // Publicado com saldo zero: esta no catalogo e nao ha o que entregar.
       db.Asset.count({ where: { ...filtro, status: ASSET_STATUS.PUBLICADO, quantity: 0 } }),
       itensComRetiradaPendente(),
       inventarioPorCategoria(query),
+      // O indicador que estava bloqueado. Sai do mesmo recorte dos outros,
+      // para o painel nao mostrar dois totais diferentes na mesma tela.
+      localizacoes.distribuicao(base),
     ]);
 
   const { itens, atrasado } = pendencia;
@@ -229,19 +239,19 @@ async function indicadores(query = {}) {
     aguardandoRetirada: retirada,
     tempoEmEstoque: tempo,
     pendencias,
+    /**
+     * Distribuicao por localizacao — uma linha por localizacao da lista
+     * fechada, mais a linha "Sem localizacao". As localizacoes com zero ativos
+     * ficam na lista de proposito: uma cidade onde a RED opera e nao tem nada
+     * e uma informacao, nao um vazio a esconder.
+     */
+    localizacoes: locais,
     graficos: { inventarioPorCategoria: categorias },
     /**
      * Contrato explicito do que ainda nao existe. A tela le isto para nao
      * inventar um cartao vazio, e quem for implementar sabe onde entra.
      */
     pendentesDeDefinicao: [
-      {
-        chave: "localizacoes",
-        rotulo: "Localizações",
-        motivo:
-          "assets.location é texto livre e está inconsistente. Depende de virar lista fechada de locais.",
-        medidaDoProblema: semLocal,
-      },
       {
         chave: "aguardandoEntrada",
         rotulo: "Aguardando entrada",

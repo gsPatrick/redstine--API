@@ -6,6 +6,7 @@ const { sequelize } = require("../config/database");
 const authRoutes = require("../features/auth/auth.routes");
 const usersRoutes = require("../features/users/users.routes");
 const catalogRoutes = require("../features/catalog/catalog.routes");
+const locationsRoutes = require("../features/locations/locations.routes");
 const assetsRoutes = require("../features/assets/assets.routes");
 const submissionsRoutes = require("../features/submissions/submissions.routes");
 const ordersRoutes = require("../features/orders/orders.routes");
@@ -40,6 +41,7 @@ router.get("/v1/ping", async (req, res) => {
 router.use("/v1/auth", authRoutes);
 router.use("/v1/users", usersRoutes);
 router.use("/v1/catalog", catalogRoutes);
+router.use("/v1/locations", locationsRoutes);
 router.use("/v1/assets", assetsRoutes);
 router.use("/v1/submissions", submissionsRoutes);
 router.use("/v1/orders", ordersRoutes);

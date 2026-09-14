@@ -17,7 +17,8 @@ O ativo é a entidade central. Leia
 
 `page` · `perPage` (máx 100) · `search` · `category` · `subcategory` ·
 `condition` (`sem_uso`\|`seminovo`\|`usado`) · `saleMode` (`direta`\|`consulta`) ·
-`commercialModel` (`estoque`\|`catalogo`\|`proprio`) · `location` · `brand` · `featured` ·
+`commercialModel` (`estoque`\|`catalogo`\|`proprio`) · `location` (rótulo exato,
+como vem em `meta.filtros.location`) · `locationId` · `brand` · `featured` ·
 `minPrice` · `maxPrice` · `sort` (`recentes`\|`preco_asc`\|`preco_desc`\|`nome`)
 
 ```
@@ -29,7 +30,8 @@ GET /api/v1/assets?category=red-mobiliario&condition=seminovo&sort=preco_asc
   "data": [{
     "id": "...", "slug": "sofa-para-hoteis", "name": "Sofá para Hotéis",
     "price": "890.00", "marketPrice": "1980.00", "discountPercent": 55,
-    "condition": "seminovo", "location": "Rio de Janeiro/RJ",
+    "condition": "seminovo",
+    "locationId": "bed155bc-...", "location": "Rio de Janeiro - RJ",
     "categoria": { "slug": "red-mobiliario", "name": "RED Mobiliário" },
     "imagens": [{ "url": "...", "position": 0 }]
   }],
@@ -94,3 +96,23 @@ Sem esse carimbo a publicação é recusada — é a regra nº 2.
 | `SUPPLIER_APPROVAL_REQUIRED` | 422 | Publicar sem aprovação |
 | `PRICE_REQUIRED` | 422 | Publicar compra direta sem preço |
 | `NOT_AWAITING_APPROVAL` | 422 | Aprovar fora do estado certo |
+
+### Localização — lista fechada
+
+`location` **não é texto livre**. Ao criar ou editar um ativo manda-se
+`locationId` (um id de `GET /locations`); mandar `location` como texto devolve
+422 em vez de ser ignorado em silêncio. `null` é aceite: "sem localização" é um
+estado válido e medido como pendência operacional.
+
+O campo `location` que volta nas respostas é o RÓTULO da localização, copiado
+da tabela — é ele que o filtro do catálogo compara. Renomear uma localização
+reetiqueta os ativos dela.
+
+| método | rota | o quê |
+|---|---|---|
+| GET | `/locations` | Lista fechada (só as ativas; `?incluirInativas=true` traz todas) — pública |
+| POST | `/locations` | Nova localização — admin |
+| PATCH | `/locations/:id` | Editar / desativar — admin |
+
+Não há DELETE de propósito: uma localização com ativos não pode desaparecer,
+desativa-se.

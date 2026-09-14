@@ -28,7 +28,11 @@ const listarQuerySchema = z.object({
   saleFormat: z.nativeEnum(FORMAS_DE_VENDA).optional(),
   availability: z.nativeEnum(DISPONIBILIDADE).optional(),
   commercialModel: z.nativeEnum(MODELOS_COMERCIAIS).optional(),
+  // O catálogo público filtra pelo RÓTULO ("Rio de Janeiro - RJ"), que é o
+  // que o painel de filtros devolve em `meta.filtros.location`. `locationId`
+  // existe para quem já tem o id em mão (a gestão) e quer exatidão.
   location: z.string().max(140).optional(),
+  locationId: z.string().uuid().optional(),
   brand: z.string().max(120).optional(),
   featured: boolQuery,
   minPrice: numeroOpcional,
@@ -57,7 +61,29 @@ const criarSchema = z.object({
   subcategoryId: z.string().uuid().optional(),
   supplierId: z.string().uuid().optional(),
   condition: z.enum(CONDICOES).optional(),
-  location: z.string().max(140).optional(),
+  /**
+   * Localização por ID, não por texto. É aqui que a lista fechada é
+   * aplicada: quem tentar mandar "Rio de Janeiro/RJ" de novo recebe 422 em
+   * vez de criar o terceiro nome para o mesmo lugar. `null` é aceite de
+   * propósito — é como se limpa a localização de um ativo.
+   */
+  locationId: z.string().uuid().nullable().optional(),
+  /**
+   * O campo de texto antigo recusa-se ALTO.
+   *
+   * Zod descarta em silêncio a chave que não está no schema, e silêncio aqui
+   * seria o pior resultado possível: um integrador que continuasse a mandar
+   * `location: "Rio de Janeiro/RJ"` receberia 201 e veria o ativo nascer sem
+   * localização nenhuma, sem nunca saber porquê. Melhor um 422 que diz o que
+   * mudou e o que usar no lugar.
+   */
+  location: z
+    .any()
+    .refine(() => false, {
+      message:
+        "Localização é lista fechada e não aceita texto. Use locationId com um id de GET /locations.",
+    })
+    .optional(),
   brand: z.string().max(120).optional(),
   material: z.string().max(120).optional(),
   color: z.string().max(80).optional(),

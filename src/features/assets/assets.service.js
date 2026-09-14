@@ -6,6 +6,7 @@ const { AppError } = require("../../utils/app-error");
 const { slugUnico } = require("../../utils/slug");
 const { paraCatalogo } = require("./assets.catalogo");
 const audit = require("../audit/audit.service");
+const localizacoes = require("../locations/locations.service");
 const eventos = require("../events/events.service");
 const notificacoes = require("../notifications/notifications.service");
 const { parsePagination } = require("../../utils/pagination");
@@ -68,7 +69,13 @@ function montarFiltros(query, { somentePublicados }) {
   if (query.availability) where.availability = query.availability;
   if (query.state) where.location = { [Op.iLike]: `%${query.state}%` };
   if (query.commercialModel) where.commercialModel = query.commercialModel;
-  if (query.location) where.location = { [Op.iLike]: `%${query.location}%` };
+  // Comparacao EXATA agora que a lista e fechada: o valor que chega e o mesmo
+  // rotulo que `meta.filtros.location` ofereceu, e um `iLike '%...%'` faria
+  // uma futura "Rio de Janeiro - RJ (Zona Norte)" ser apanhada pelo clique em
+  // "Rio de Janeiro - RJ". Com texto livre o `iLike` era uma defesa; com lista
+  // fechada passa a ser um erro.
+  if (query.location) where.location = query.location;
+  if (query.locationId) where.locationId = query.locationId;
   if (query.brand) where.brand = { [Op.iLike]: `%${query.brand}%` };
   if (query.featured !== undefined) where.featured = query.featured;
   if (query.supplierId) where.supplierId = query.supplierId;
@@ -276,11 +283,16 @@ async function criar(dados, { atorId }) {
     }
   }
 
+  // Lista fechada: o id tem de existir e estar ativo, e o rotulo vem de la —
+  // nunca do que o cliente mandou.
+  const local = await localizacoes.resolver(dados.locationId);
+
   const slug = await slugUnico(db.Asset, dados.slug || dados.name);
 
   // Nasce sempre em rascunho: ninguem cria ativo ja publicado, nem admin.
   const asset = await db.Asset.create({
     ...dados,
+    ...local,
     // Sem `originalQuantity` o model punha 1, e um lote cadastrado com 500
     // unidades passava a ter "quantidade vendida" (original - disponivel)
     // negativa no painel e nada para devolver ao estoque numa volta de
@@ -339,6 +351,10 @@ async function atualizar(id, dados, opcoes = {}) {
   if (dados.name && !dados.slug) {
     dados.slug = await slugUnico(db.Asset, dados.name, { ignoreId: asset.id });
   }
+
+  // So mexe na localizacao quando ela vem no corpo: um PATCH de preco nao
+  // pode limpar o local do ativo por omissao.
+  if ("locationId" in dados) Object.assign(dados, await localizacoes.resolver(dados.locationId));
 
   // Snapshot dos campos que a regra manda rastrear (secao 23).
   const rastreados = ["price", "marketPrice", "quantity", "commercialModel", "saleMode", "status"];

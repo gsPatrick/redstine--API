@@ -739,9 +739,21 @@ async function main() {
       gOperacao.json?.data?.tempoEmEstoque?.limiteLongoDias === 90 &&
       gOperacao.json?.data?.pendencias?.total !== undefined
   );
+  // Eram dois; "Localizacoes" saiu da lista quando a localizacao virou lista
+  // fechada e o indicador passou a existir de facto. Sobra "Aguardando
+  // entrada", que depende de o cliente definir quem carimba o recebimento
+  // fisico. Conferir a CHAVE e nao o comprimento: o comprimento voltava a
+  // passar sozinho se alguem acrescentasse outra pendencia qualquer.
   ok(
-    "declara os indicadores que ficaram a espera de decisao",
-    gOperacao.json?.data?.pendentesDeDefinicao?.length === 2
+    "declara o indicador que ficou a espera de decisao",
+    gOperacao.json?.data?.pendentesDeDefinicao?.length === 1 &&
+      gOperacao.json?.data?.pendentesDeDefinicao[0].chave === "aguardandoEntrada"
+  );
+  // E o que deixou de estar a espera: a distribuicao por localizacao.
+  ok(
+    "o indicador de Localizacoes ja existe, com a linha do que falta localizar",
+    Array.isArray(gOperacao.json?.data?.localizacoes) &&
+      gOperacao.json.data.localizacoes.some((l) => l.id === null)
   );
   const gInventario = await req("GET", "/management/operation/assets?perPage=5", { token });
   ok("tabela operacional responde", gInventario.status === 200);

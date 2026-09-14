@@ -46,6 +46,32 @@ const CONDICAO = {
 
 const chaveCondicao = (texto) => CONDICAO[String(texto || "").trim().toLowerCase()] || "usado_bom";
 
+const semAcento = (t) =>
+  String(t || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
+/**
+ * Texto livre do acervo antigo -> uma localizacao da lista fechada, ou nada.
+ *
+ * O mesmo mapa da migracao, pelo mesmo motivo: "Pilares" e bairro do municipio
+ * do Rio de Janeiro, logo o ativo esta no Rio. O que nao casa com nenhuma
+ * localizacao cadastrada nao vira cidade nova — volta como ausencia, que e
+ * verificavel.
+ */
+function casarLocalizacao(texto, localizacoes) {
+  const t = semAcento(texto);
+  if (!t) return { locationId: null, location: null };
+  const achou = localizacoes.find(
+    (l) => t.startsWith(semAcento(l.city)) || t.startsWith(semAcento(l.slug.replace(/-/g, " ")))
+  );
+  const alias = { pilares: "rio-de-janeiro-rj", rio: "rio-de-janeiro-rj" };
+  const porAlias = achou || localizacoes.find((l) => l.slug === alias[t.split(/[^a-z]/)[0]]);
+  return porAlias ? { locationId: porAlias.id, location: porAlias.name } : { locationId: null, location: null };
+}
+
 /** Lê um atributo da ficha do JSON de origem pelo nome. */
 function atributo(produto, nome) {
   const a = (produto.attributes || []).find(
@@ -67,6 +93,8 @@ async function main() {
   if (!categorias.length) throw new Error("Rode `npm run seed` antes: faltam categorias.");
 
   const porSlug = new Map(categorias.map((c) => [c.slug, c]));
+
+  const localizacoes = await db.Location.findAll({ where: { active: true } });
 
   let criados = 0;
   let atualizados = 0;
@@ -92,7 +120,12 @@ async function main() {
       shortDescription: p.shortDescription || null,
       description: p.description || null,
       condition: chaveCondicao(p.condition || atributo(p, "Condição")),
-      location: p.location || null,
+      // Localizacao e lista fechada: o JSON do acervo antigo traz texto livre
+      // ("Pilares/RJ"), e importa-lo de volta reintroduziria exatamente a
+      // sujeira que a migracao limpou. Casa-se com a lista quando da; quando
+      // nao da, entra sem localizacao e aparece na pendencia operacional, para
+      // alguem decidir — o importador nao inventa cidade.
+      ...casarLocalizacao(p.location, localizacoes),
       brand: p.brand || null,
       material: p.material || null,
       color: p.color || null,

@@ -43,6 +43,26 @@ async function main() {
     console.log(`categoria de teste removida: ${c.name}`);
   }
 
+  // Localizacoes de teste, pela mesma razao das categorias: a conferencia de
+  // acoes cria uma cidade para provar que a RED consegue acrescentar a
+  // terceira, e sem isto ela ficava na lista fechada real — uma lista fechada
+  // com lixo dentro deixa de ser fechada. So apaga as vazias.
+  const locaisTeste = await db.Location.findAll({
+    where: { [Op.or]: [{ name: { [Op.iLike]: "%[smoke]%" } }, { name: { [Op.iLike]: "%[e2e]%" } }] },
+    attributes: ["id", "name"],
+  });
+  for (const l of locaisTeste) {
+    const usada = await db.Asset.count({
+      where: { locationId: l.id },
+      paranoid: false,
+    });
+    // Se ainda ha ativo de teste apontando, ele cai mais abaixo nesta mesma
+    // execucao; a localizacao sai na proxima.
+    if (usada) continue;
+    await db.Location.destroy({ where: { id: l.id }, force: true });
+    console.log(`localizacao de teste removida: ${l.name}`);
+  }
+
   if (!ids.length) {
     console.log("nada a limpar: nenhum ativo de teste encontrado.");
     return db.sequelize.close();
