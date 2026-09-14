@@ -125,6 +125,8 @@ const env = {
   rateLimit: {
     windowMs: int(process.env.RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
     max: int(process.env.RATE_LIMIT_MAX, 300),
+    // Login e registo, separado do resto: é o alvo de força bruta.
+    authMax: int(process.env.RATE_LIMIT_AUTH_MAX, 20),
   },
 
   payments: {

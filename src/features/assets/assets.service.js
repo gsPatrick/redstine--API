@@ -15,6 +15,7 @@ const {
   ASSET_TRANSICOES,
   ORDER_STATUS,
   MODALIDADES,
+  MODELOS_COMERCIAIS,
   CAMPOS_TECNICOS,
   ROTULO_CONDICAO,
   ROTULO_FORMA_VENDA,
@@ -300,7 +301,16 @@ async function criar(dados, { atorId }) {
     originalQuantity: dados.originalQuantity ?? dados.quantity ?? undefined,
     slug,
     status: ASSET_STATUS.RASCUNHO,
-    supplierId: dados.supplierId || atorId,
+    // Ativo proprio da RED nao tem fornecedor, por definicao. Sem esta regra o
+    // default punha o proprio operador como fornecedor: a tela dizia "Nenhum,
+    // ativo da propria RED" e a coluna Fornecedor mostrava o nome dele, e o
+    // relatorio por fornecedor passava a atribuir o acervo da casa a uma
+    // pessoa. O split ja estava certo (quem manda nele e o modelo), mas o dado
+    // estava mentindo.
+    supplierId:
+      dados.commercialModel === MODELOS_COMERCIAIS.PROPRIO
+        ? null
+        : dados.supplierId || atorId,
   });
 
   await audit.registrar({

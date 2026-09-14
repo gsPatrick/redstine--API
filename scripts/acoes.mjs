@@ -147,10 +147,17 @@ ok("PATCH sem `locationId` NÃO apaga a localização do ativo",
    soPreco.json?.data?.locationId === rio.id, JSON.stringify({locationId:soPreco.json?.data?.locationId}));
 
 // 7. Quem adiciona a terceira cidade é a RED, pelo painel — sem deploy.
-const terceira = await chamar("POST","/locations",admin,{ city:"[smoke] Nova Cidade", uf:"mg" });
+//
+// O nome carrega o instante porque a localização é única por cidade+UF e NÃO
+// se apaga (desativa-se, como as categorias). Um nome fixo dava 201 na
+// primeira execução e 409 em todas as seguintes, e o verificador deixava de
+// ser repetível — falhava por já ter passado antes, que é o pior falso
+// negativo que existe.
+const cidadeNova = `[smoke] Nova Cidade ${Date.now()}`;
+const terceira = await chamar("POST","/locations",admin,{ city: cidadeNova, uf:"mg" });
 ok("A RED cria a terceira localização pelo painel", terceira.status===201, `(veio ${terceira.status})`);
 ok("O rótulo canónico sai de Cidade - UF, com a UF em maiúsculas",
-   terceira.json?.data?.name === "[smoke] Nova Cidade - MG" && terceira.json?.data?.uf === "MG",
+   terceira.json?.data?.name === `${cidadeNova} - MG` && terceira.json?.data?.uf === "MG",
    JSON.stringify({name:terceira.json?.data?.name, uf:terceira.json?.data?.uf}));
 
 // 8. E ela passa a estar disponível para o cadastro no mesmo instante.
