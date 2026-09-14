@@ -930,6 +930,39 @@ const proibidos = ["receitaRed","potencialRed","potencialFornecedor","repasse","
 const vazando = proibidos.filter(c => c in (todasLinhas[0]||{}));
 ok("A tabela da Operação não expõe receita, repasse nem participação", vazando.length === 0, `(${vazando.join(", ")})`);
 
+// Corrigir o modelo de um ativo que ja esta no catalogo
+console.log("\n== VIRAR ATIVO PRÓPRIO ==");
+const publicados = (await chamar("GET","/assets/admin?perPage=100",admin)).json.data;
+const comFornecedor = (Array.isArray(publicados) ? publicados : publicados.items || [])
+  .find((a) => a.status === "publicado" && a.supplierId && a.commercialModel !== "proprio");
+
+if (comFornecedor) {
+  const antesStatus = comFornecedor.status;
+  const vira = await chamar("PATCH",`/assets/${comFornecedor.id}`,admin,{ commercialModel:"proprio" });
+  ok("Trocar o modelo para próprio", vira.status===200, `(${vira.status})`);
+
+  const depois = (await chamar("GET",`/assets/admin/${comFornecedor.id}`,admin)).json.data;
+  ok("O fornecedor sai: ativo próprio não tem terceiro", depois.supplierId === null);
+
+  // O ponto que importa: a regra que invalida a aprovacao ao mudar o modelo
+  // existe para proteger o fornecedor. Sem fornecedor ela nao se aplica, e
+  // aplica-la mandaria o ativo para fora do catalogo a espera de uma aprovacao
+  // que ninguem pode dar.
+  ok("O ativo continua publicado, não volta a aguardar aprovação",
+     depois.status === antesStatus, `(${antesStatus} -> ${depois.status})`);
+
+  const linha = (await chamar("GET","/management/assets?perPage=100",admin)).json.data
+    .find((l) => l.id === comFornecedor.id);
+  ok("A divisão passa a ser 0% fornecedor / 100% RED",
+     linha && linha.participacaoFornecedor === 0 && linha.participacaoRed === 100,
+     JSON.stringify({f:linha?.participacaoFornecedor, r:linha?.participacaoRed}));
+
+  // Devolve ao estado anterior para nao sujar o acervo de demonstracao.
+  await chamar("PATCH",`/assets/${comFornecedor.id}`,admin,{ commercialModel: comFornecedor.commercialModel });
+} else {
+  console.log("  (sem ativo publicado com fornecedor para converter)");
+}
+
 // Separação de acesso
 console.log("\n== SEPARAÇÃO DE ACESSO ==");
 const semToken = await chamar("GET","/management/financial/movements");

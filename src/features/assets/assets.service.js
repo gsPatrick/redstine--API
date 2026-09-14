@@ -345,17 +345,39 @@ async function atualizar(id, dados, opcoes = {}) {
   const asset = await db.Asset.findByPk(id);
   if (!asset) throw AppError.notFound("Ativo nao encontrado.", "ASSET_NOT_FOUND");
 
+  // Virar ativo proprio apaga o fornecedor, pela mesma razao do cadastro: nao
+  // ha terceiro. Sem isto, corrigir o modelo de um ativo da casa deixava a
+  // pessoa que cadastrou como "fornecedor" dele para sempre.
+  const viraProprio =
+    dados.commercialModel === MODELOS_COMERCIAIS.PROPRIO &&
+    asset.commercialModel !== MODELOS_COMERCIAIS.PROPRIO;
+
+  if (viraProprio) dados.supplierId = null;
+
   // Alterar preco ou modelo depois de aprovado invalida a aprovacao: o
   // fornecedor aprovou aqueles numeros, nao outros.
   const mudouComercial =
     (dados.price !== undefined && String(dados.price) !== String(asset.price)) ||
     (dados.commercialModel !== undefined && dados.commercialModel !== asset.commercialModel);
 
-  if (mudouComercial && asset.supplierApprovedAt) {
+  // A excecao: ativo proprio nao tem de quem esperar aprovacao. Invalidar aqui
+  // mandaria o ativo de volta para "aguardando aprovacao" a espera de um
+  // fornecedor que nao existe, e ele sairia do catalogo sem nunca poder
+  // voltar sozinho. A autorizacao passa a ficar em nome de quem fez a
+  // mudanca, que e a mesma regra ja usada na publicacao.
+  const proprioDepois =
+    (dados.commercialModel ?? asset.commercialModel) === MODELOS_COMERCIAIS.PROPRIO;
+
+  if (mudouComercial && asset.supplierApprovedAt && !proprioDepois) {
     dados.supplierApprovedAt = null;
     if (asset.status === ASSET_STATUS.PUBLICADO || asset.status === ASSET_STATUS.APROVADO) {
       dados.status = ASSET_STATUS.AGUARDANDO_APROVACAO;
     }
+  }
+
+  if (viraProprio) {
+    dados.supplierApprovedAt = asset.supplierApprovedAt || new Date();
+    dados.supplierApprovedBy = opcoes.ator?.id || asset.supplierApprovedBy || null;
   }
 
   if (dados.name && !dados.slug) {
