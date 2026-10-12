@@ -87,11 +87,32 @@ Acompanhe pelo log do contêiner:
 
 ```
 [db] conexao estabelecida
-[bootstrap] migrações: ...
+[bootstrap] migrações: 1 aplicada(s) de 17
+[bootstrap]   + 20261012000000-venda-minima-e-indicador-consulta.js
 [bootstrap] seed: ...
 [bootstrap] catálogo inicial: ...
 [api] a ouvir em ...
 ```
+
+A linha das migrações é a que confirma o deploy: ela diz **quais** correram
+agora, pelo nome. Quando não há nada pendente, diz `nenhuma pendente (N já
+aplicadas)`. Se uma migração falhar, a API **não sobe** — o log mostra o erro e
+o contêiner reinicia, porque um esquema incompleto daria 500 em todas as rotas
+em vez de um erro visível.
+
+As migrações correm dentro do próprio processo (`src/config/migrador.js`), na
+mesma tabela `SequelizeMeta` do `sequelize-cli` — `npm run migrate` e
+`db:migrate:status` continuam a ver o estado certo, e nada é aplicado duas
+vezes. O `npx sequelize-cli` saiu do arranque porque, num contêiner sem rede de
+saída, um `npx` que não encontra o binário tenta baixá-lo e fica preso, com o
+log a acusar o registry em vez do problema real.
+
+> **Migração que falha a meio** deixa o esquema parcialmente alterado e ela
+> própria por aplicar — a API não sobe e a tentativa seguinte falha de novo, em
+> "a coluna já existe". Não há rollback automático (o `sequelize-cli` também não
+> o tem). Por isso cada migração é escrita para poder correr duas vezes
+> (`IF NOT EXISTS`, `ON CONFLICT DO NOTHING`). Para sair do estado: suba com
+> `BOOTSTRAP_DB=false`, corrija no banco, e volte ao normal.
 
 O admin nasce como `admin@redestine.com.br`. **Troque a senha no primeiro
 acesso** — ou defina `SEED_ADMIN_EMAIL` e `SEED_ADMIN_PASSWORD` antes do

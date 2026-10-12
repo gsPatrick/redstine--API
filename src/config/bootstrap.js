@@ -7,6 +7,8 @@ const { promisify } = require("util");
 const execArquivo = promisify(execFile);
 const RAIZ = path.resolve(__dirname, "../..");
 
+const { migrar } = require("./migrador");
+
 /**
  * Preparação do banco no arranque.
  *
@@ -15,10 +17,16 @@ const RAIZ = path.resolve(__dirname, "../..");
  *
  * Três passos, com garantias diferentes:
  *
- *   MIGRAÇÕES  sempre. São idempotentes por natureza — o sequelize registra o
- *              que já rodou. Se falharem, a aplicação NÃO sobe: um esquema
- *              incompleto produz erro em toda requisição, e falhar no arranque
- *              com mensagem clara é melhor do que servir 500 em silêncio.
+ *   MIGRAÇÕES  sempre. São idempotentes por natureza — o que já rodou está
+ *              registrado em `SequelizeMeta`. Se falharem, a aplicação NÃO
+ *              sobe: um esquema incompleto produz erro em toda requisição, e
+ *              falhar no arranque com mensagem clara é melhor do que servir
+ *              500 em silêncio.
+ *
+ *              Correm DENTRO deste processo (ver `migrador.js`), e não como
+ *              `npx sequelize-cli` num processo filho: num contêiner sem rede
+ *              de saída o `npx` que não acha o binário tenta baixá-lo e fica
+ *              preso, e o log acusa o registry em vez do problema real.
  *
  *   SEED       sempre. Usa findOrCreate: categorias e admin existentes são
  *              respeitados, nunca sobrescritos.
@@ -68,8 +76,18 @@ async function prepararBanco(db) {
 
   console.log("[bootstrap] preparando o banco…");
 
-  const migracoes = await rodar("migrações", "npx", ["sequelize-cli", "db:migrate"]);
-  if (!migracoes.ok) {
+  try {
+    const { executadas, total } = await migrar(db.sequelize);
+    if (executadas.length) {
+      // Dizer QUAIS correram é o ponto: depois de um deploy é esta linha que
+      // confirma que a coluna nova chegou ao servidor.
+      console.log(`[bootstrap] migrações: ${executadas.length} aplicada(s) de ${total}`);
+      for (const nome of executadas) console.log(`[bootstrap]   + ${nome}`);
+    } else {
+      console.log(`[bootstrap] migrações: nenhuma pendente (${total} já aplicadas)`);
+    }
+  } catch (e) {
+    console.error(`[bootstrap] migrações FALHARAM: ${(e.message || "").slice(0, 600)}`);
     // Sem esquema não há aplicação. Morrer aqui deixa o erro visível no log do
     // contêiner, em vez de esconder o problema atrás de 500 em cada rota.
     throw new Error("Migrações falharam. A API não pode subir com o esquema incompleto.");

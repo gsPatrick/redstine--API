@@ -14,9 +14,11 @@ WORKDIR /app
 # muda, não a cada alteração de código.
 COPY package.json package-lock.json* ./
 
-# `--omit=dev` deixa de fora as ferramentas de teste. O `sequelize-cli` NÃO
-# está entre elas: as migrações rodam no arranque (src/config/bootstrap.js),
-# então ele é dependência de produção de verdade.
+# `--omit=dev` deixa de fora as ferramentas de teste. O `sequelize-cli` fica,
+# mas já não é ele que corre no arranque: as migrações rodam dentro do processo
+# (src/config/migrador.js), sobre a mesma tabela `SequelizeMeta`. O CLI
+# permanece para quem precisar conduzir uma migração à mão (`npm run migrate`,
+# `db:migrate:undo`) num contêiner em pé.
 RUN npm ci --omit=dev
 
 
