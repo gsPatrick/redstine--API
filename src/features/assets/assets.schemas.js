@@ -93,6 +93,17 @@ const criarSchema = z.object({
   // curadoria por vezes cadastra um lote ja parcialmente consumido.
   originalQuantity: z.coerce.number().int().min(0).optional(),
   unit: z.string().max(30).optional(),
+  /**
+   * Venda mínima. Mínimo 1 — zero não é "sem mínima", é um pedido vazio.
+   * A coerência com `quantity` é verificada no service, que é quem conhece o
+   * saldo atual quando a atualização manda só um dos dois campos.
+   */
+  minOrderQuantity: z.coerce.number().int().min(1).max(100000).optional(),
+  /**
+   * Indicador de oportunidade do sob consulta. Vazio é aceito e significa
+   * "não exibir o indicador" — normalizado para null no service.
+   */
+  consultationNote: z.string().max(160).nullable().optional(),
   price: numeroOpcional,
   marketPrice: numeroOpcional,
   saleMode: z.nativeEnum(MODALIDADES).optional(),

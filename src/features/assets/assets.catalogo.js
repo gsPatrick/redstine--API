@@ -63,6 +63,14 @@ function ficha(asset) {
     asset.quantity > 0 ? `${asset.quantity} ${asset.unit || "unidade"}` : null
   );
   add("Estoque", Number(asset.quantity) > 0 ? null : "Esgotado");
+  // Mínima em 1 não é informação: é o default de todo o acervo e a linha só
+  // ocuparia espaço na ficha.
+  add(
+    "Venda mínima",
+    Number(asset.minOrderQuantity) > 1
+      ? `${asset.minOrderQuantity} ${asset.unit || "unidade"}`
+      : null
+  );
   add("Marca", asset.brand);
   add("Material", asset.material);
   add("Cor", asset.color);
@@ -150,6 +158,21 @@ function paraCatalogo(asset) {
 
     quantity: json.quantity,
     unit: json.unit,
+
+    /**
+     * Venda mínima. Sempre um número >= 1, mesmo em linha antiga sem a
+     * coluna: o seletor do front não tem como lidar com `null` e cair para 1
+     * é exatamente o comportamento de quem não tem mínima.
+     */
+    minOrderQuantity: Math.max(1, Number(json.minOrderQuantity || 1)),
+
+    /**
+     * Indicador de oportunidade. Só acompanha o ativo sob consulta, que é
+     * onde ele ocupa o lugar do preço. Num ativo de compra direta o preço
+     * está ali e a frase seria uma segunda afirmação sobre o mesmo valor.
+     */
+    consultationNote:
+      json.saleMode === MODALIDADES.CONSULTA ? json.consultationNote || null : null,
     inStock: disponivel(json),
 
     /**

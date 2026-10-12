@@ -270,6 +270,40 @@ async function porSlug(slug, { somentePublicados = true } = {}) {
   return apresentar(asset, somentePublicados);
 }
 
+/**
+ * Venda mínima coerente com o saldo.
+ *
+ * Mínima maior do que a quantidade disponível produz um ativo que ninguém
+ * consegue comprar: o seletor abre em 5 num estoque de 3, e o "−" já está no
+ * fundo. Recusar na borda é melhor do que descobrir isso na página.
+ *
+ * Estoque zero não entra na regra — esgotado não oferece seletor nenhum, e
+ * bloquear a edição da mínima num lote vendido impediria de preparar a
+ * próxima entrada.
+ *
+ * Recebe os valores JÁ resolvidos (o que veio no corpo, ou o que o ativo tem),
+ * porque um PATCH pode mandar só um dos dois.
+ */
+function validarVendaMinima(minima, quantidade) {
+  const min = Number(minima ?? 1);
+  const qtd = Number(quantidade ?? 0);
+  if (min > 1 && qtd > 0 && min > qtd) {
+    throw AppError.unprocessable(
+      `A venda minima (${min}) e maior do que a quantidade disponivel (${qtd}).`,
+      "MIN_ORDER_ABOVE_STOCK",
+      { minOrderQuantity: min, quantity: qtd }
+    );
+  }
+}
+
+/** Indicador vazio é ausência de indicador, não string vazia na coluna. */
+function normalizarIndicador(dados) {
+  if ("consultationNote" in dados) {
+    const texto = (dados.consultationNote || "").trim();
+    dados.consultationNote = texto || null;
+  }
+}
+
 async function criar(dados, { atorId }) {
   const categoria = await db.Category.findByPk(dados.categoryId);
   if (!categoria) throw AppError.badRequest("Categoria invalida.", "CATEGORY_INVALID");
@@ -287,6 +321,9 @@ async function criar(dados, { atorId }) {
   // Lista fechada: o id tem de existir e estar ativo, e o rotulo vem de la —
   // nunca do que o cliente mandou.
   const local = await localizacoes.resolver(dados.locationId);
+
+  validarVendaMinima(dados.minOrderQuantity, dados.quantity ?? 1);
+  normalizarIndicador(dados);
 
   const slug = await slugUnico(db.Asset, dados.slug || dados.name);
 
@@ -379,6 +416,12 @@ async function atualizar(id, dados, opcoes = {}) {
     dados.supplierApprovedAt = asset.supplierApprovedAt || new Date();
     dados.supplierApprovedBy = opcoes.ator?.id || asset.supplierApprovedBy || null;
   }
+
+  validarVendaMinima(
+    dados.minOrderQuantity ?? asset.minOrderQuantity,
+    dados.quantity ?? asset.quantity
+  );
+  normalizarIndicador(dados);
 
   if (dados.name && !dados.slug) {
     dados.slug = await slugUnico(db.Asset, dados.name, { ignoreId: asset.id });

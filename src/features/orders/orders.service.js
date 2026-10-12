@@ -119,6 +119,27 @@ async function criar(dados, { atorId = null, externo = false } = {}) {
         );
       }
 
+      /**
+       * Venda minima — validada aqui tambem, e nao so no seletor.
+       *
+       * O seletor do site ja comeca na minima e nao desce dela, mas o carrinho
+       * vive no localStorage do navegador: uma linha gravada antes de a minima
+       * subir chega com quantidade menor, e sem esta verificacao viraria pedido
+       * que a RED nao aceita vender.
+       *
+       * A venda externa escapa de proposito, pela mesma razao que pode informar
+       * preco: o negocio foi fechado no atendimento e o operador esta a
+       * registrar o que aconteceu, nao a montar um pedido novo.
+       */
+      const minima = Math.max(1, Number(ativo.minOrderQuantity || 1));
+      if (!externo && linha.quantity < minima) {
+        throw AppError.unprocessable(
+          `"${ativo.name}" tem venda minima de ${minima} ${ativo.unit || "unidade"}.`,
+          "BELOW_MIN_ORDER",
+          { assetId: ativo.id, minOrderQuantity: minima, pedido: linha.quantity }
+        );
+      }
+
       const unit = precoInformado === null ? Number(ativo.price) : precoInformado;
       const total = Number((unit * linha.quantity).toFixed(2));
       subtotal += total;

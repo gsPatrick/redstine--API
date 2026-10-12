@@ -241,6 +241,109 @@ async function main() {
   });
   ok("quantidade acima do disponivel e recusada", excesso.status === 422);
 
+  // ---------- venda minima ----------
+  console.log("\nvenda minima");
+
+  // O slug sai do proprio ativo desta execucao: slug fixo apanharia o ativo de
+  // uma execucao anterior e o teste deixaria de ser fiavel.
+  const assetSlug = depois.json?.data?.slug;
+
+  // Minima acima do saldo deixaria o ativo impossivel de comprar: o seletor
+  // abriria num numero que o estoque nao cobre.
+  const minimaAbsurda = await req("PATCH", `/assets/${assetId}`, {
+    token,
+    body: { minOrderQuantity: 99999 },
+  });
+  ok(
+    "minima acima do estoque e recusada",
+    minimaAbsurda.status === 422 && minimaAbsurda.json?.error?.code === "MIN_ORDER_ABOVE_STOCK",
+    `(veio ${minimaAbsurda.status} ${minimaAbsurda.json?.error?.code || ""})`
+  );
+
+  const minimaOk = await req("PATCH", `/assets/${assetId}`, {
+    token,
+    body: { minOrderQuantity: 5 },
+  });
+  ok("minima dentro do estoque e aceita", minimaOk.status === 200);
+
+  const noCatalogoComMinima = await req("GET", `/assets/slug/${assetSlug}`);
+  ok(
+    "o catalogo publico entrega a minima para o seletor",
+    noCatalogoComMinima.json?.data?.minOrderQuantity === 5,
+    `(veio ${noCatalogoComMinima.json?.data?.minOrderQuantity})`
+  );
+
+  // O carrinho vive no localStorage: linha gravada antes de a minima subir
+  // chega com quantidade menor, e sem esta recusa viraria pedido que a RED nao
+  // aceita vender.
+  const abaixoDaMinima = await req("POST", "/orders", {
+    body: {
+      buyerName: "Comprador Teste",
+      buyerEmail: "comprador@example.com",
+      paymentMethod: "pix",
+      items: [{ assetId, quantity: 2 }],
+    },
+  });
+  ok(
+    "pedido abaixo da venda minima e recusado",
+    abaixoDaMinima.status === 422 && abaixoDaMinima.json?.error?.code === "BELOW_MIN_ORDER",
+    `(veio ${abaixoDaMinima.status} ${abaixoDaMinima.json?.error?.code || ""})`
+  );
+
+  const naMinima = await req("POST", "/orders", {
+    body: {
+      buyerName: "Comprador Teste",
+      buyerEmail: "comprador@example.com",
+      paymentMethod: "pix",
+      items: [{ assetId, quantity: 5 }],
+    },
+  });
+  ok("pedido na venda minima e aceito", naMinima.status === 201);
+
+  // ---------- indicador de oportunidade ----------
+  console.log("\nindicador de oportunidade do sob consulta");
+
+  const comIndicador = await req("PATCH", `/assets/${assetId}`, {
+    token,
+    body: { consultationNote: "Ate 30% abaixo do preco de mercado" },
+  });
+  ok("indicador aceito pela gestao", comIndicador.status === 200);
+
+  const diretoSemIndicador = await req("GET", `/assets/slug/${assetSlug}`);
+  ok(
+    "compra direta NAO expoe o indicador: ali o preco esta a vista",
+    diretoSemIndicador.json?.data?.consultationNote === null,
+    `(veio ${JSON.stringify(diretoSemIndicador.json?.data?.consultationNote)})`
+  );
+
+  await req("PATCH", `/assets/${assetId}`, { token, body: { saleMode: "consulta" } });
+  const sobConsultaComIndicador = await req("GET", `/assets/slug/${assetSlug}`);
+  ok(
+    "sob consulta expoe o indicador no lugar do preco",
+    sobConsultaComIndicador.json?.data?.consultationNote ===
+      "Ate 30% abaixo do preco de mercado",
+    `(veio ${JSON.stringify(sobConsultaComIndicador.json?.data?.consultationNote)})`
+  );
+
+  const indicadorApagado = await req("PATCH", `/assets/${assetId}`, {
+    token,
+    body: { consultationNote: null },
+  });
+  ok("indicador pode ser APAGADO", indicadorApagado.status === 200);
+  const semIndicador = await req("GET", `/assets/slug/${assetSlug}`);
+  ok(
+    "apagado significa ausente, nao string vazia",
+    semIndicador.json?.data?.consultationNote === null
+  );
+
+  // Devolve modalidade E minima ao estado em que o resto do smoke as espera: o
+  // bloco de checkout mais abaixo pede 1 unidade, e deixar a minima em 5 fazia
+  // a propria regra nova recusar esse pedido.
+  await req("PATCH", `/assets/${assetId}`, {
+    token,
+    body: { saleMode: "direta", minOrderQuantity: 1 },
+  });
+
   // ---------- cotacao ----------
   console.log("\ncotacao sob consulta");
   const cotacao = await req("POST", "/quotes", {

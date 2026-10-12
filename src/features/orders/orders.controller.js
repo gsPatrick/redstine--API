@@ -11,6 +11,10 @@ const criar = catchAsync(async (req, res) => {
     reference: order.reference,
     status: order.status,
     total: order.total,
+    // A tela de pedido concluido exibe data e hora do registro. Sem isto ela
+    // usava o relogio do navegador — que mostra a hora da MAQUINA do
+    // comprador, e divergia do comprovante por e-mail gerado no servidor.
+    createdAt: order.createdAt,
   });
 });
 

@@ -53,6 +53,16 @@ module.exports = (sequelize) => {
       unit: { type: DataTypes.STRING(30), allowNull: false, defaultValue: "unidade" },
 
       /**
+       * Venda mínima — quantas unidades é o menor pedido aceito.
+       *
+       * Propriedade do ativo, não do carrinho: é ela que define onde o seletor
+       * de quantidade começa e onde o "−" para, na página do produto e no
+       * carrinho. Em 1, que é o default, o seletor se comporta como sempre se
+       * comportou.
+       */
+      minOrderQuantity: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1 },
+
+      /**
        * Visualizacoes da pagina do ativo (revisao do cliente, item 33).
        *
        * Contador desnormalizado, de proposito. A verdade auditavel continua na
@@ -86,6 +96,17 @@ module.exports = (sequelize) => {
         allowNull: false,
         defaultValue: "disponivel",
       },
+
+      /**
+       * Indicador de oportunidade do ativo sob consulta.
+       *
+       * Ocupa, na página, o lugar onde estaria o preço — "Até 30% abaixo do
+       * preço de mercado". É TEXTO escrito pela gestão e não um percentual
+       * derivado de `price`/`marketPrice`, porque no sob consulta o preço
+       * ainda não foi fechado: calcular um desconto sobre ele seria anunciar
+       * um número que ninguém autorizou.
+       */
+      consultationNote: { type: DataTypes.STRING(160) },
 
       saleMode: {
         type: DataTypes.ENUM(...Object.values(MODALIDADES)),
