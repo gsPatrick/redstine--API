@@ -52,6 +52,10 @@ function ficha(asset) {
   };
 
   add("Condição", ROTULO_CONDICAO[asset.condition]);
+  // "Tipo" sai da subcategoria — e o descritivo pede o campo na ficha
+  // ("Tipo — exemplo: Estante industrial"). Nao existe coluna propria para
+  // ele, e criar uma duplicaria o que a subcategoria ja diz.
+  add("Tipo", asset.subcategoria?.name);
   add("Localização", asset.location);
   add("Forma de venda", ROTULO_FORMA_VENDA[asset.saleFormat]);
   add("Disponibilidade", ROTULO_DISPONIBILIDADE[asset.availability]);
@@ -185,6 +189,22 @@ function paraCatalogo(asset) {
      * O nome `views` e o que o front le no card e na pagina do produto.
      */
     views: Number(json.viewsCount || 0),
+
+    /**
+     * Aplicações — a aba do mesmo nome, no descritivo novo.
+     *
+     * Vive em `attributes.aplicacoes` e NÃO entra na ficha técnica: a ficha é
+     * campo-e-valor, e aplicações é prosa ("hotéis, restaurantes, escritórios").
+     * Posta na ficha, apareceria também no card "Características", que o
+     * documento manda conter só informação própria do produto.
+     *
+     * Vem como lista: a gestão escreve uma por linha, ou separadas por ponto e
+     * vírgula, que é como o acervo já traz este texto.
+     */
+    applications: String(json.attributes?.aplicacoes || "")
+      .split(/[;\n]/)
+      .map((t) => t.trim())
+      .filter(Boolean),
 
     attributes: ficha(json),
   };

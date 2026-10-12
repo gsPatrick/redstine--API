@@ -79,3 +79,27 @@ describe("indicador de oportunidade do sob consulta", () => {
     assert.ok(!atualizarSchema.safeParse({ consultationNote: "x".repeat(161) }).success);
   });
 });
+
+describe("aba Aplicacoes", () => {
+  test("vem como lista a partir de attributes.aplicacoes", () => {
+    const p = paraCatalogo(
+      ativo({ attributes: { aplicacoes: "Hotéis; Restaurantes;\nEscritórios" } })
+    );
+    assert.deepEqual(p.applications, ["Hotéis", "Restaurantes", "Escritórios"]);
+  });
+
+  test("sem o campo, a lista e vazia — e a aba nao e renderizada", () => {
+    assert.deepEqual(paraCatalogo(ativo()).applications, []);
+  });
+
+  test("NAO entra na ficha tecnica: a ficha e campo-e-valor, aplicacoes e prosa", () => {
+    const linhas = ficha(ativo({ attributes: { aplicacoes: "Hotéis" } })).map((l) => l.name);
+    assert.ok(!linhas.includes("Aplicações"));
+    assert.ok(!linhas.includes("aplicacoes"));
+  });
+
+  test('"Tipo" na ficha sai da subcategoria, como o descritivo pede', () => {
+    const linhas = ficha(ativo({ subcategoria: { name: "Estante industrial" } }));
+    assert.deepEqual(linhas.find((l) => l.name === "Tipo").values, ["Estante industrial"]);
+  });
+});
